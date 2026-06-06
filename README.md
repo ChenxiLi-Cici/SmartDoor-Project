@@ -1,4 +1,4 @@
-# DESN2000 Smart Door Project
+# DESN2000 Smart Door Project!
 Team members:
 Xiaolei Wu [z5556281]
 Leyi Yang  [z5535409]

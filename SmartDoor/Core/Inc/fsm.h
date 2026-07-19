@@ -20,7 +20,6 @@ typedef enum {
 } DoorState_t;
 
 typedef enum {
-    CARD_NONE,
     CARD_INVALID,
     CARD_NORMAL,
     CARD_ADMIN

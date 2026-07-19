@@ -10,7 +10,7 @@
 
 static DoorState_t current_state;
 static CardType_t last_card_type = CARD_NONE;
-static char last_key = 0;
+static char pressed_key = 0;
 
 typedef enum {
     NONE,
@@ -101,7 +101,7 @@ static void enter_unlocked(void) {
 void fsm_init(void) {
     current_state  = IDLE;
     last_card_type = CARD_NONE;
-    last_key = 0;
+    pressed_key = 0;
     reset_fsm_timer();
     enter_idle();
 }
@@ -110,10 +110,94 @@ void fsm_set_card_type(CardType_t type) {
 }
 
 void fsm_set_key(char key) {
-    last_key = key;
+    pressed_key = key;
 }
 
 DoorState_t fsm_get_state(void) {
     return current_state;
+}
+
+
+void fsm_dispatch(Event_t event) {
+    switch (current_state) {
+
+    case IDLE:
+        if (event == EVT_CARD_SCANNED) {
+            switch (last_card_type) {
+                case CARD_NORMAL:
+                    current_state = AUTHORISED;
+                    enter_authorised();
+                    current_state = PASSAGE;
+                    enter_passage();
+                    break;
+                case CARD_ADMIN:
+                    current_state = ADMIN;
+                    enter_admin();
+                    break;
+                case CARD_INVALID:
+                    lcd_print("Invalid card", "");
+                    led_start_blink(INVALID_CARD_DURATION_MS, BLINK_INTERVAL_MS);
+                    start_fsm_timer(INVALID_CARD_DURATION_MS, TIMER_PURPOSE_IDLE_REVERT);
+                    break;
+                default:
+                    break;
+            }
+        } else if (event == EVT_SCHEDULE_START) {
+            current_state = UNLOCKED;
+            enter_unlocked();
+        }
+        break;
+        
+    case PASSAGE:
+        if (event == EVT_PASSAGE_DONE) {
+            current_state = CLOSING;
+            enter_closing();
+        } else if (event == EVT_TAILGATE_DETECTED) {
+            current_state = ALERT;
+            enter_alert();
+        }
+        break;
+
+    case ALERT:
+        if (event == EVT_TIMEOUT) {
+            current_state = CLOSING;
+            enter_closing();
+        }
+        break;
+
+    case CLOSING:
+        if (event == EVT_TIMEOUT) {
+            current_state = IDLE;
+            enter_idle();
+        }
+        break;
+        
+    case ADMIN:
+        if (event == EVT_ADMIN_EXIT) {
+            admin_menu_exit();
+            current_state = IDLE;
+            enter_idle();
+        } else if (event == EVT_KEYPAD_KEY) {
+            if (pressed_key == '*') {
+                admin_menu_exit();
+                current_state = IDLE;
+                enter_idle();
+            } else {
+                admin_menu_handle_key(pressed_key);
+            }
+        }
+        break;
+        
+    case UNLOCKED:
+        if (event == EVT_SCHEDULE_END) {
+            motor_close();
+            current_state = IDLE;
+            enter_idle();
+        }
+        break;
+
+    case AUTHORISED:
+        break;
+    }
 }
 

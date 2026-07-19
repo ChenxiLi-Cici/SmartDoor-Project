@@ -30,7 +30,7 @@ static void start_fsm_timer(uint32_t duration_ms, TimerPurpose_t purpose) {
 
 static void reset_fsm_timer(void) {
     fsm_timer_ms      = 0;
-    fsm_timer_purpose = TIMER_PURPOSE_NONE;
+    fsm_timer_purpose = NONE;
     fsm_timer_expired = 0;
 }
 
@@ -52,7 +52,7 @@ const char *fsm_state_name(DoorState_t state) {
             return "UNLOCKED";
         default:         
             return "UNKNOWN";
-    }a
+    }
 }
 
 static void enter_idle(void) {
@@ -82,7 +82,7 @@ static void enter_alert(void) {
     //lcd_print("!! ALERT !!", "Tailgating");
     led_start_blink(ALERT_DURATION_MS, BLINK_INTERVAL_MS);
     buzzer_alert(ALERT_DURATION_MS);
-    start_fsm_timer(ALERT_DURATION_MS, TIMER_PURPOSE_FSM_TIMEOUT);
+    start_fsm_timer(ALERT_DURATION_MS, FSM_TIMEOUT);
 }
 
 static void enter_closing(void) {
@@ -90,7 +90,7 @@ static void enter_closing(void) {
     //lcd_print("Closing door", "");
     led_off();
     motor_close();
-    start_fsm_timer(CLOSING_TRAVEL_MS, TIMER_PURPOSE_FSM_TIMEOUT);
+    start_fsm_timer(CLOSING_TRAVEL_MS, FSM_TIMEOUT);
 }
 
 static void enter_unlocked(void) {
@@ -137,7 +137,7 @@ void fsm_dispatch(Event_t event) {
                 case CARD_INVALID:
                     lcd_print("Invalid card", "");
                     led_start_blink(INVALID_CARD_DURATION_MS, BLINK_INTERVAL_MS);
-                    start_fsm_timer(INVALID_CARD_DURATION_MS, TIMER_PURPOSE_IDLE_REVERT);
+                    start_fsm_timer(INVALID_CARD_DURATION_MS, IDLE_REVERT);
                     break;
                 default:
                     break;
@@ -147,7 +147,7 @@ void fsm_dispatch(Event_t event) {
             enter_unlocked();
         }
         break;
-        
+
     case PASSAGE:
         if (event == EVT_PASSAGE_DONE) {
             current_state = CLOSING;
@@ -201,3 +201,24 @@ void fsm_dispatch(Event_t event) {
     }
 }
 
+void fsm_tick_1ms(void) {
+    if (fsm_timer_ms > 0) {
+        fsm_timer_ms--;
+        if (fsm_timer_ms == 0) {
+            fsm_timer_expired = 1;
+        }
+    }
+}
+
+void fsm_poll(void) {
+    if (fsm_timer_expired) {
+        fsm_timer_expired = 0;
+        TimerPurpose_t purpose = fsm_timer_purpose;
+        fsm_timer_purpose = NONE;
+        if (purpose == FSM_TIMEOUT) {
+            fsm_dispatch(EVT_TIMEOUT);
+        } else if (purpose == IDLE_REVERT) {
+            //lcd_print("Smart Door", "Scan card...");
+        }
+    }
+}

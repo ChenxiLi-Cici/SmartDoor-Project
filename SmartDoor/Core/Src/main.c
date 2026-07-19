@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include "fsm.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -338,7 +339,7 @@ int main(void)
   } else {
       printf("WARN: PN532 Configuration Failed.\r\n");
   }
-
+  fsm_init();
 
   /* USER CODE END 2 */
 
@@ -348,6 +349,7 @@ int main(void)
   {
 	  // Constantly refresh the non-blocking timers
 	  io_actuators_process();
+    fsm_poll();
 	  // call FSM
 
     /* USER CODE END WHILE */
@@ -679,6 +681,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       if (led_blink_timeout > 0)  led_blink_timeout--;
       if (led_blink_counter > 0)  led_blink_counter--;
       if (buzzer_timeout > 0)     buzzer_timeout--;
+
+      fsm_tick_1ms();
   }
 }
 

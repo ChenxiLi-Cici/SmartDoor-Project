@@ -1,6 +1,7 @@
 #include "fsm.h"
 #include "output.h"
-#include "admin_menu.h"
+#include "admin_menu.h" 
+#include "input.h"
 
 #define ALERT_DURATION_MS 10000 //alarm 10s
 #define BLINK_INTERVAL_MS 200 //200ms
@@ -94,7 +95,7 @@ static void enter_closing(void) {
 }
 
 static void enter_unlocked(void) {
-    lcd_print("Event mode", "Door open");
+    //lcd_print("Event mode", "Door open");
     motor_open(DIR_ENTRY);
 }
 
@@ -135,7 +136,7 @@ void fsm_dispatch(Event_t event) {
                     enter_admin();
                     break;
                 case CARD_INVALID:
-                    lcd_print("Invalid card", "");
+                    //lcd_print("Invalid card", "");
                     led_start_blink(INVALID_CARD_DURATION_MS, BLINK_INTERVAL_MS);
                     start_fsm_timer(INVALID_CARD_DURATION_MS, IDLE_REVERT);
                     break;

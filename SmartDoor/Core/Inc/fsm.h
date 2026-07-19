@@ -22,7 +22,8 @@ typedef enum {
 typedef enum {
     CARD_INVALID,
     CARD_NORMAL,
-    CARD_ADMIN
+    CARD_ADMIN,
+    CARD_NONE
 } CardType_t;
 
 typedef enum {

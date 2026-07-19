@@ -50,6 +50,8 @@ void lcd_print(const char *line1, const char *line2) {
 
 }
 
+/* Continuously and non-blocking update your LED flashing status
+ * and buzzer in the main loop. */
 void io_actuators_process(void) {
     // Non-blocking LED blink polling
     if (led_blink_timeout > 0) {

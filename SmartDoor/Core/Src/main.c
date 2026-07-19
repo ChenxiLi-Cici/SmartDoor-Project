@@ -326,18 +326,19 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
-  printf("\r\n=== System Bootup: Smart Door Init ===\r\n");
+  // Start the 1ms timer
+  HAL_TIM_Base_Start_IT(&htim2);
 
-  /* 初始化硬件唤醒并配置 PN532 模块 */
+  printf("\r\n=== Smart Door Init ===\r\n");
+
+  /* Wake up and configure the PN532 module */
   PN532_Wakeup();
-  if (PN532_SAMConfig())
-  {
-      printf("[INFO] PN532 NFC Module Initialised Successfully.\r\n");
+  if (PN532_SAMConfig()) {
+      printf(" PN532 NFC Module Initialised Successfully.\r\n");
+  } else {
+      printf("WARN: PN532 Configuration Failed.\r\n");
   }
-  else
-  {
-      printf("[WARN] PN532 Configuration Failed. Check Hardware Connection.\r\n");
-  }
+
 
   /* USER CODE END 2 */
 
@@ -345,7 +346,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
+	  // Constantly refresh the non-blocking timers
+	  io_actuators_process();
+	  // call FSM
 
     /* USER CODE END WHILE */
 
@@ -656,4 +659,27 @@ void Error_Handler(void)
   while (1)
   {
   }
+
+
 }
+
+/* USER CODE BEGIN 4 */
+
+/* Import variables from output file */
+extern volatile uint32_t led_blink_timeout;
+extern volatile uint32_t led_blink_counter;
+extern volatile uint32_t buzzer_timeout;
+
+
+// Period elapsed callback
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM2)
+  {
+      if (led_blink_timeout > 0)  led_blink_timeout--;
+      if (led_blink_counter > 0)  led_blink_counter--;
+      if (buzzer_timeout > 0)     buzzer_timeout--;
+  }
+}
+
+/* USER CODE END 4 */

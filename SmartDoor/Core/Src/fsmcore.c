@@ -28,8 +28,92 @@ static void start_fsm_timer(uint32_t duration_ms, TimerPurpose_t purpose) {
     fsm_timer_expired = 0;
 }
 
-static void cancel_fsm_timer(void) {
+static void reset_fsm_timer(void) {
     fsm_timer_ms      = 0;
     fsm_timer_purpose = TIMER_PURPOSE_NONE;
     fsm_timer_expired = 0;
 }
+
+const char *fsm_state_name(DoorState_t state) {
+    switch (state) {
+        case IDLE:       
+            return "IDLE";
+        case AUTHORISED: 
+            return "AUTHORISED";
+        case PASSAGE:    
+            return "PASSAGE";
+        case ALERT:      
+            return "ALERT";
+        case CLOSING:    
+            return "CLOSING";
+        case ADMIN:      
+            return "ADMIN";
+        case UNLOCKED:   
+            return "UNLOCKED";
+        default:         
+            return "UNKNOWN";
+    }a
+}
+
+static void enter_idle(void) {
+    reset_fsm_timer();
+    //ldr_arm(false);
+    led_off();
+    //lcd_print("Smart Door", "Scan card");
+}
+
+static void enter_admin(void) {
+    admin_menu_enter();
+}
+
+static void enter_authorised(void) {
+    //lcd_print("Access granted", "Please enter");
+    led_signal_authorised();
+    motor_open(DIR_ENTRY);
+    //ldr_arm(true);
+}
+
+static void enter_passage(void) {
+    //lcd_print("Please pass", "");
+}
+
+static void enter_alert(void) {
+    //ldr_arm(false);
+    //lcd_print("!! ALERT !!", "Tailgating");
+    led_start_blink(ALERT_DURATION_MS, BLINK_INTERVAL_MS);
+    buzzer_alert(ALERT_DURATION_MS);
+    start_fsm_timer(ALERT_DURATION_MS, TIMER_PURPOSE_FSM_TIMEOUT);
+}
+
+static void enter_closing(void) {
+    //ldr_arm(false);
+    //lcd_print("Closing door", "");
+    led_off();
+    motor_close();
+    start_fsm_timer(CLOSING_TRAVEL_MS, TIMER_PURPOSE_FSM_TIMEOUT);
+}
+
+static void enter_unlocked(void) {
+    lcd_print("Event mode", "Door open");
+    motor_open(DIR_ENTRY);
+}
+
+void fsm_init(void) {
+    current_state  = IDLE;
+    last_card_type = CARD_NONE;
+    last_key = 0;
+    reset_fsm_timer();
+    enter_idle();
+}
+void fsm_set_card_type(CardType_t type) {
+    last_card_type = type;
+}
+
+void fsm_set_key(char key) {
+    last_key = key;
+}
+
+DoorState_t fsm_get_state(void) {
+    return current_state;
+}
+

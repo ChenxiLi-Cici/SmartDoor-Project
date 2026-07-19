@@ -40,4 +40,14 @@ typedef enum {
     EVT_SCHEDULE_END
 } Event_t;
 
+
+void fsm_init(void);
+void fsm_dispatch(Event_t evt);
+DoorState_t fsm_get_state(void);
+const char *fsm_state_name(DoorState_t state);
+void fsm_set_card_type(CardType_t type);
+void fsm_set_key(char key);
+void fsm_tick_1ms(void);
+void fsm_poll(void);
+
 #endif

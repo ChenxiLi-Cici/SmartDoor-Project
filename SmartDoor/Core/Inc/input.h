@@ -1,10 +1,11 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#include <stdbool.h>
 #include "main.h"
 #include "fsm.h"
 
-/* Initialise all input-module software state. */
+/* Initialize all input-module software state. */
 void sensors_init(void);
 
 /* Read NFC once and classify the detected card. */

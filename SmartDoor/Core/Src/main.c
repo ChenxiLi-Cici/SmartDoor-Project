@@ -24,6 +24,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "fsm.h"
+#include "input.h"
+#include "keypad.h"
+#include "output.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -340,6 +343,7 @@ int main(void)
       printf("WARN: PN532 Configuration Failed.\r\n");
   }
   fsm_init();
+  sensors_init();
 
   /* USER CODE END 2 */
 

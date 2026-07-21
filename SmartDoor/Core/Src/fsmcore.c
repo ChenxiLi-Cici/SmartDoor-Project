@@ -58,7 +58,7 @@ const char *fsm_state_name(DoorState_t state) {
 
 static void enter_idle(void) {
     reset_fsm_timer();
-    //ldr_arm(false);
+    ldr_arm(false);
     led_off();
     //lcd_print("Smart Door", "Scan card");
 }
@@ -71,7 +71,7 @@ static void enter_authorised(void) {
     //lcd_print("Access granted", "Please enter");
     led_signal_authorised();
     motor_open(DIR_ENTRY);
-    //ldr_arm(true);
+    ldr_arm(true);
 }
 
 static void enter_passage(void) {
@@ -79,7 +79,7 @@ static void enter_passage(void) {
 }
 
 static void enter_alert(void) {
-    //ldr_arm(false);
+    ldr_arm(false);
     //lcd_print("!! ALERT !!", "Tailgating");
     led_start_blink(ALERT_DURATION_MS, BLINK_INTERVAL_MS);
     buzzer_alert(ALERT_DURATION_MS);
@@ -87,7 +87,7 @@ static void enter_alert(void) {
 }
 
 static void enter_closing(void) {
-    //ldr_arm(false);
+    ldr_arm(false);
     //lcd_print("Closing door", "");
     led_off();
     motor_close();

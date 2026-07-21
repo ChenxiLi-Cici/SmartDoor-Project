@@ -354,6 +354,13 @@ int main(void)
 	  // Constantly refresh the non-blocking timers
 	  io_actuators_process();
 	  fsm_poll();
+
+	  Event_t ldr_event = ldr_poll();
+
+	  if (ldr_event != EVT_NONE) {
+		  fsm_dispatch(ldr_event);
+	  }
+
 	  // call FSM
 	  /* Poll NFC only while waiting for a card. */
 	  if (fsm_get_state() == IDLE) {

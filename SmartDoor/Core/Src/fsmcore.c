@@ -6,8 +6,7 @@
 #define ALERT_DURATION_MS 10000 //alarm 10s
 #define BLINK_INTERVAL_MS 200 //200ms
 #define INVALID_CARD_DURATION_MS 2000//2s
-// to be comfirm
-#define CLOSING_TRAVEL_MS 3000 //door closing time
+#define CLOSING_TRAVEL_MS 2500 //door closing time
 
 static DoorState_t current_state;
 static CardType_t last_card_type = CARD_NONE;
@@ -191,9 +190,8 @@ void fsm_dispatch(Event_t event) {
         
     case UNLOCKED:
         if (event == EVT_SCHEDULE_END) {
-            motor_close();
-            current_state = IDLE;
-            enter_idle();
+            current_state = CLOSING;
+            enter_closing();
         }
         break;
 

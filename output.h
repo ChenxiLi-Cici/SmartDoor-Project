@@ -13,9 +13,8 @@ void led_start_blink(uint32_t duration_ms, uint32_t interval_ms);
 void buzzer_alert(uint32_t duration_ms);
 void lcd_print(const char *line1, const char *line2);
 
-/* Called once per ms from the interrupt.
- * update the timer variable of LED, buzzer and motor. */
-void output_tick_1ms(void);
-
+/* Continuously and non-blocking update your LED flashing status
+ * and buzzer in the main loop. */
+void io_actuators_process(void);
 
 #endif

@@ -27,6 +27,8 @@
 #include "input.h"
 #include "keypad.h"
 #include "output.h"
+#include "lcd.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -292,6 +294,7 @@ int PN532_Get_UID(uint8_t *uid, uint8_t *uidLen)
     return 1;
 }
 
+
 /* USER CODE END 0 */
 
 /**
@@ -342,8 +345,12 @@ int main(void)
   } else {
       printf("WARN: PN532 Configuration Failed.\r\n");
   }
+
+  LCD_Init();
+
   fsm_init();
   sensors_init();
+
 
   /* USER CODE END 2 */
 
@@ -352,7 +359,6 @@ int main(void)
   while (1)
   {
 	  // Constantly refresh the non-blocking timers
-	  io_actuators_process();
 	  fsm_poll();
 
 	  Event_t ldr_event = ldr_poll();
@@ -688,22 +694,13 @@ void Error_Handler(void)
 
 /* USER CODE BEGIN 4 */
 
-/* Import variables from output file */
-extern volatile uint32_t led_blink_timeout;
-extern volatile uint32_t led_blink_counter;
-extern volatile uint32_t buzzer_timeout;
-
-
 // Period elapsed callback
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM2)
   {
-      if (led_blink_timeout > 0)  led_blink_timeout--;
-      if (led_blink_counter > 0)  led_blink_counter--;
-      if (buzzer_timeout > 0)     buzzer_timeout--;
-
-      fsm_tick_1ms();
+	  output_tick_1ms();
+	  fsm_tick_1ms();
   }
 }
 

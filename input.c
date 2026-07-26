@@ -11,8 +11,6 @@ extern int PN532_Get_UID(uint8_t *uid, uint8_t *uidLen);
 extern ADC_HandleTypeDef hadc2;
 extern ADC_HandleTypeDef hadc3;
 
-static bool adc_read_once(ADC_HandleTypeDef *hadc, uint16_t *value);
-
 static uint32_t last_ldr_print_ms = 0; //记录上一次打印 LDR 数值是什么时候
 
 static const uint8_t normal_card_uid[] = {0x9D, 0x9E, 0x29, 0x07};

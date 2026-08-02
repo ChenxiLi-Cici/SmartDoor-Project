@@ -24,14 +24,19 @@ static volatile uint32_t motor_ms_before_next_step = 0;
 #define MOTOR_STEP_INTERVAL_MS 3
 // 2048 -> 360 degree; 2048÷4=512 -> 90 degree
 #define MOTOR_STEPS_FULL_TRAVEL 512
+
+#define MOTOR_POSITION_CLOSED        0
+#define MOTOR_POSITION_ENTRY_OPEN    512
+#define MOTOR_POSITION_EXIT_OPEN    -512
+
 #define LCD_COLS 16
 
 // At which step of the 4-step sequence (0 to 3)
 static uint8_t motor_step_index = 0;
 // the direction, +1 indicates moving forward, -1 indicates going back
 static int8_t motor_step_dir = 1;
-// last open direction: DIR_ENTRY or DIR_EXIT
-static Direction_t motor_last_open_dir = DIR_ENTRY;
+
+static volatile int32_t motor_position_steps = MOTOR_POSITION_CLOSED;
 
 // 4-step excitation sequence: B -> A -> D -> C
 static void motor_apply_step(uint8_t step) {
@@ -121,6 +126,7 @@ void output_tick_1ms(void) {
         motor_step_index = idx;
 
         motor_apply_step(motor_step_index);
+        motor_position_steps += motor_step_dir;
         motor_steps_remaining--;
         motor_ms_before_next_step = MOTOR_STEP_INTERVAL_MS;
 
@@ -131,28 +137,48 @@ void output_tick_1ms(void) {
 }
 
 
-// Start the initialization of one rotation
-static void motor_start(int8_t direction) {
-    motor_step_dir = direction;
+static void motor_move_to(int32_t target_position)
+{
+    int32_t difference;
+
+    /*
+     * Temporarily stop the current movement while the new
+     * direction and distance are calculated.
+     */
+    motor_steps_remaining = 0;
+
+    difference = target_position - motor_position_steps;
+
+    if (difference > 0) {
+        motor_step_dir = 1;
+        motor_steps_remaining = (uint32_t)difference;
+    }
+    else if (difference < 0) {
+        motor_step_dir = -1;
+        motor_steps_remaining = (uint32_t)(-difference);
+    }
+    else {
+        motor_ms_before_next_step = 0;
+        motor_release();
+        return;
+    }
+
     motor_ms_before_next_step = MOTOR_STEP_INTERVAL_MS;
-    motor_steps_remaining = MOTOR_STEPS_FULL_TRAVEL;
 }
 
-void motor_open(Direction_t dir) {
-    motor_last_open_dir = dir;
+void motor_open(Direction_t dir)
+{
     if (dir == DIR_ENTRY) {
-    	motor_start(1);
-    } else {
-    	motor_start(-1);
+        motor_move_to(MOTOR_POSITION_ENTRY_OPEN);
+    }
+    else {
+        motor_move_to(MOTOR_POSITION_EXIT_OPEN);
     }
 }
 
-void motor_close(void) {
-	if (motor_last_open_dir == DIR_ENTRY) {
-		motor_start(-1);
-	} else {
-		motor_start(1);
-	}
+void motor_close(void)
+{
+    motor_move_to(MOTOR_POSITION_CLOSED);
 }
 
 // Light up the green light LD2

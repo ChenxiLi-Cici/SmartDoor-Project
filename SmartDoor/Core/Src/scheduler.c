@@ -46,8 +46,8 @@ void scheduler_set_window(uint8_t start_hour, uint8_t start_min,
     window_start_min   = minutes_of_day(start_hour, start_min);
     window_end_min     = minutes_of_day(end_hour, end_min);
     window_configured  = true;
-    // Ensure that after the window is reset, it always be judged from the ununlocked state
-    currently_unlocked = false;
+//    // Ensure that after the window is reset, it always be judged from the ununlocked state
+//    currently_unlocked = false;
 
     printf("Scheduler: window set %02u:%02u - %02u:%02u\r\n",
            start_hour, start_min, end_hour, end_min);
@@ -67,10 +67,10 @@ void scheduler_set_clock(uint8_t hour, uint8_t minute) {
 		return;
 	}
 
-    /* Since we have modified the absolute time,
-     * whether it is unlock or not needs to be rejudged
-    */
-    currently_unlocked = false;
+//    /* Since we have modified the absolute time,
+//     * whether it is unlock or not needs to be rejudged
+//    */
+//    currently_unlocked = false;
 
     printf("Scheduler: clock set to %02u:%02u\r\n", hour, minute);
 }
@@ -80,7 +80,8 @@ void scheduler_set_clock(uint8_t hour, uint8_t minute) {
 // called when the administrator wants to cancel the scheduled unlock
 void scheduler_disable(void) {
     window_configured  = false;
-    currently_unlocked = false;
+//    currently_unlocked = false;
+    printf("Scheduler: window disabled\r\n");
 }
 
 
@@ -145,12 +146,12 @@ bool scheduler_check_start(void) {
 bool scheduler_check_end(void) {
 	// No configured window or
 	// It is not unlocked yet
-    if (!window_configured || !currently_unlocked) {
+    if (!currently_unlocked) {
         return false;
     }
 
-    // It's no longer within the window range now.
-    if (!is_in_window(current_minute_of_day())) {
+    // The window was cancelled, or it's no longer within the window range now.
+    if (!window_configured || !is_in_window(current_minute_of_day())) {
         currently_unlocked = false;
         printf("Scheduler: window END\r\n");
         return true;

@@ -401,6 +401,7 @@ int main(void)
     DoorState_t nfc_state = fsm_get_state();
 
     if (nfc_state == IDLE || nfc_state == UNLOCKED || nfc_state == ALERT) {
+    	CardType_t card = nfc_poll_card();
 	    if (card != CARD_NONE) {
 			  //First save the card type, then send the card-scanned event to the state machine.
 			  fsm_set_card_type(card);

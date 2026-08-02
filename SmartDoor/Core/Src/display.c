@@ -1,0 +1,29 @@
+#include "display.h"
+#include "lcd.h"
+
+#define LCD_COLS 16
+
+//
+void lcd_print(const char *line1, const char *line2) {
+	const char *lines[2] = { line1, line2 };
+
+	for (int i = 0; i < 2; i++) {
+		const char *text = lines[i];
+		uint8_t written = 0;
+
+		// Move the cursor to the beginning of the line and then output
+		LCD_SetCursor(i, 0);
+
+		while (text != 0 && *text != '\0' && written < LCD_COLS) {
+			LCD_SendData((uint8_t)(*text));
+			text++;
+			written++;
+		}
+		// Fill in Spaces at the end
+		while (written < LCD_COLS) {
+			LCD_SendData(' ');
+			written++;
+		}
+	}
+
+}

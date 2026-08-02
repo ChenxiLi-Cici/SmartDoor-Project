@@ -367,11 +367,17 @@ int main(void)
 	  // Constantly refresh the non-blocking timers
 	  fsm_poll();
 
-	  if (scheduler_check_start()) {
-		  fsm_dispatch(EVT_SCHEDULE_START);
+	  DoorState_t door_state = fsm_get_state();
+
+	  if (door_state == IDLE) {
+		  if (scheduler_check_start()) {
+			  fsm_dispatch(EVT_SCHEDULE_START);
+		  }
 	  }
-	  if (scheduler_check_end()) {
-		  fsm_dispatch(EVT_SCHEDULE_END);
+	  else if (door_state == UNLOCKED) {
+		  if (scheduler_check_end()) {
+			  fsm_dispatch(EVT_SCHEDULE_END);
+		  }
 	  }
 
 	  char key = keypad_poll();

@@ -305,6 +305,9 @@ Event_t ldr_poll(void)
 		event = EVT_PASSAGE_CANCELLED;
 	}
 
+	latest_ldr1_state = ldr1_state;
+	latest_ldr2_state = ldr2_state;
+
 	previous_ldr1_state = ldr1_state;
 	previous_ldr2_state = ldr2_state;
 

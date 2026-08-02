@@ -17,6 +17,15 @@ void scheduler_set_clock(uint8_t hour, uint8_t minute);
 // Cancel the configured window.
 void scheduler_disable(void);
 
+/* Read the configured window so that the admin_menu can pre-fill the LCD.
+ * Returns false if no window has been configured yet. */
+bool scheduler_get_window(uint8_t *start_hour, uint8_t *start_min,
+                          uint8_t *end_hour, uint8_t *end_min);
+
+// Read the current wall-clock time from the RTC.
+void scheduler_get_time(uint8_t *hour, uint8_t *minute);
+
+
 // Scheduler Event Interface
 bool scheduler_check_start(void);
 bool scheduler_check_end(void);

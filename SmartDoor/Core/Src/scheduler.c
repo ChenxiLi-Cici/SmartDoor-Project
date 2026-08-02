@@ -22,27 +22,12 @@ static uint16_t minutes_of_day(uint8_t hour, uint8_t minute) {
 
 // Reads the RTC and returns it as minutes since midnight.
 static uint16_t current_minute_of_day(void) {
-	// Declare an empty structure to store time (hours, minutes, seconds)
-    RTC_TimeTypeDef sTime = {0};
+    uint8_t hour   = 0;
+    uint8_t minute = 0;
 
-    /* Declare an empty structure to store date.
-     Even though we don't care about the date, HAL requires calling
-     GetDate to unlock the shadow register after GetTime -- otherwise
-     the shadow register (which latch both time and date) won't
-     update. So we must call GetDate, and therefore need a structure
-     ready to receive the date.
-    */
-    RTC_DateTypeDef sDate = {0};
+    scheduler_get_time(&hour, &minute);
 
-    // Get the time
-    /* RTC_FORMAT_BIN: Convert time data into a regular binary integer,
-       so that it can be directly used for + - * /
-    */
-    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-
-    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
-    return minutes_of_day(sTime.Hours, sTime.Minutes);
+    return minutes_of_day(hour, minute);
 }
 
 // Is the current time inside [window_start_min, window_end_min)
@@ -92,6 +77,47 @@ void scheduler_disable(void) {
     window_configured  = false;
     currently_unlocked = false;
 }
+
+
+/* Read the configured window so that the admin_menu can pre-fill the LCD.
+ * Returns false if no window has been configured yet. */
+bool scheduler_get_window(uint8_t *start_hour, uint8_t *start_min,
+                          uint8_t *end_hour, uint8_t *end_min) {
+    *start_hour = (uint8_t)(window_start_min / 60);
+    *start_min  = (uint8_t)(window_start_min % 60);
+    *end_hour   = (uint8_t)(window_end_min / 60);
+    *end_min    = (uint8_t)(window_end_min % 60);
+
+    return window_configured;
+}
+
+// Read the current clock time from the RTC.
+void scheduler_get_time(uint8_t *hour, uint8_t *minute) {
+    // Declare an empty structure to store time (hours, minutes, seconds)
+	RTC_TimeTypeDef sTime = {0};
+
+	/* Declare an empty structure to store date.
+	 Even though we don't care about the date, HAL requires calling
+	 GetDate to unlock the shadow register after GetTime -- otherwise
+	 the shadow register (which latch both time and date) won't
+	 update. So we must call GetDate, and therefore need a structure
+	 ready to receive the date.
+	*/
+	RTC_DateTypeDef sDate = {0};
+
+	// Get the time
+	/* RTC_FORMAT_BIN: Convert time data into a regular binary integer,
+	   so that it can be directly used for + - * /
+	*/
+	HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+	HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+
+    *hour   = sTime.Hours;
+    *minute = sTime.Minutes;
+}
+
 
 // return 1 exactly when the current time crosses into the configured window.
 bool scheduler_check_start(void) {

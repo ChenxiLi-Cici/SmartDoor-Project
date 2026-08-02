@@ -8,7 +8,7 @@
 #define LDR2_CLEAR_THRESHOLD 1200U
 
 #define LDR_SEQUENCE_TIMEOUT_MS 5000U
-#define LDR_DEBOUNCE_MS 100U
+#define LDR_DEBOUNCE_MS 50U
 
 typedef enum
 {

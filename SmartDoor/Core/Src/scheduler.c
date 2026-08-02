@@ -62,6 +62,11 @@ void scheduler_set_clock(uint8_t hour, uint8_t minute) {
     sTime.Minutes        = minute;
     sTime.Seconds        = 0;
 
+    if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) {
+		printf("Scheduler: failed to set clock\r\n");
+		return;
+	}
+
     /* Since we have modified the absolute time,
      * whether it is unlock or not needs to be rejudged
     */

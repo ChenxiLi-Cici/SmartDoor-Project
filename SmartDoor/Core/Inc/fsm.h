@@ -31,11 +31,19 @@ typedef enum {
     EVT_CARD_SCANNED,
     EVT_LDR_FRONT,
     EVT_LDR_REAR,
+    EVT_ENTRY_REQUEST,
+    EVT_EXIT_REQUEST,
+	EVT_BOTH_LDRS_BLOCKED,
+	EVT_ENTRY_CONFIRMED,
+	EVT_EXIT_CONFIRMED,
     EVT_PASSAGE_DONE,
+	EVT_PASSAGE_CANCELLED,
     EVT_TAILGATE_DETECTED,
     EVT_TIMEOUT,
     EVT_KEYPAD_KEY,
     EVT_ADMIN_EXIT,
+	EVT_ADMIN_SET_OPEN,
+	EVT_ADMIN_SET_NORMAL,
     EVT_SCHEDULE_START,
     EVT_SCHEDULE_END
 } Event_t;
@@ -49,5 +57,9 @@ void fsm_set_card_type(CardType_t type);
 void fsm_set_key(char key);
 void fsm_tick_1ms(void);
 void fsm_poll(void);
+
+/* Which state the admin menu was opened from, so the menu can tell whether
+ * the door is currently being held open. */
+DoorState_t fsm_get_admin_origin(void);
 
 #endif

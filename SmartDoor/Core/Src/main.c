@@ -28,6 +28,8 @@
 #include "keypad.h"
 #include "output.h"
 #include "lcd.h"
+#include "ldr.h"
+#include "scheduler.h"
 
 /* USER CODE END Includes */
 
@@ -351,9 +353,9 @@ int main(void)
   }
 
   LCD_Init();
-
-  fsm_init();
   sensors_init();
+  ldr_init();
+  fsm_init();
 
 
   /* USER CODE END 2 */
@@ -372,6 +374,12 @@ int main(void)
 		  fsm_dispatch(EVT_SCHEDULE_END);
 	  }
 
+	  char key = keypad_poll();
+	  if (key != 0) {
+		  fsm_set_key(key);
+		  fsm_dispatch(EVT_KEYPAD_KEY);
+	  }
+
 	  Event_t ldr_event = ldr_poll();
 
 	  if (ldr_event != EVT_NONE) {
@@ -380,7 +388,12 @@ int main(void)
 
 	  // call FSM
 	  /* Poll NFC only while waiting for a card. */
-	  if (fsm_get_state() == IDLE) {
+	  DoorState_t door_state = fsm_get_state();
+	  /* Even in the unlock state,
+	   *  nfc poll should be conducted to handle the situation
+	   *  where the administrator swipes the card for configuration
+	   */
+	  if (fsm_get_state() == IDLE  || door_state == UNLOCKED) {
 		  CardType_t card = nfc_poll_card();
 
 		  if (card != CARD_NONE) {
@@ -495,7 +508,7 @@ static void MX_ADC2_Init(void)
   sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_61CYCLES_5;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
   if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
@@ -561,7 +574,7 @@ static void MX_ADC3_Init(void)
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_61CYCLES_5;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
   if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)

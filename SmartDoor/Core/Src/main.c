@@ -367,6 +367,8 @@ int main(void)
 	  // Constantly refresh the non-blocking timers
 	  fsm_poll();
 
+	  // call FSM
+	  /* Poll NFC only while waiting for a card. */
 	  DoorState_t door_state = fsm_get_state();
 
 	  if (door_state == IDLE) {
@@ -392,9 +394,6 @@ int main(void)
 		  fsm_dispatch(ldr_event);
 	  }
 
-	  // call FSM
-	  /* Poll NFC only while waiting for a card. */
-	  DoorState_t door_state = fsm_get_state();
 	  /* Even in the unlock state,
 	   *  nfc poll should be conducted to handle the situation
 	   *  where the administrator swipes the card for configuration

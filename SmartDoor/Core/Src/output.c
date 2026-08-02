@@ -5,6 +5,7 @@
 #define ALARM_LED_GPIO_Port   LED_D3_GPIO_Port
 #define ALARM_LED_Pin         LED_D3_Pin
 
+
 //  timer variables
 
 // How many ms will the red light continue to flash in total
@@ -20,8 +21,19 @@ static volatile uint32_t motor_steps_remaining = 0;
 // How many ms until the next step
 static volatile uint32_t motor_ms_before_next_step = 0;
 
-
+//#define MOTOR_STEP_INTERVAL_MS 3
+/////
 #define MOTOR_STEP_INTERVAL_MS 3
+
+#define BUZZER_PERIOD_MS 16
+
+// Where we are inside the current buzzer pulse period
+static uint8_t buzzer_phase = 0;
+
+// 2048 -> 360 degree; 2048÷4=512 -> 90 degree
+#define MOTOR_STEPS_FULL_TRAVEL 512
+/////
+
 // 2048 -> 360 degree; 2048÷4=512 -> 90 degree
 #define MOTOR_STEPS_FULL_TRAVEL 512
 
@@ -95,16 +107,35 @@ void output_tick_1ms(void) {
 		}
 	}
 
-	/* buzzer square wave */
+//	/* buzzer square wave */
+//	if (buzzer_timeout > 0) {
+//		buzzer_timeout--;
+//		// generate the square wave
+//		HAL_GPIO_TogglePin(Buzzer_GPIO_Port, Buzzer_Pin);
+//
+//		if (buzzer_timeout == 0) {
+//			HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
+//		}
+//	}
+
+	/////
 	if (buzzer_timeout > 0) {
 		buzzer_timeout--;
-		// generate the square wave
-		HAL_GPIO_TogglePin(Buzzer_GPIO_Port, Buzzer_Pin);
+
+		buzzer_phase++;
+		if (buzzer_phase >= BUZZER_PERIOD_MS) {
+			buzzer_phase = 0;
+			HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_SET);
+		} else {
+			HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
+		}
 
 		if (buzzer_timeout == 0) {
 			HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
 		}
 	}
+
+	//////
 
 	/* stepper motor */
     if (motor_steps_remaining == 0) {
@@ -204,6 +235,9 @@ void led_start_blink(uint32_t duration_ms, uint32_t interval_ms) {
 
 // Start to ring the buzzer
 void buzzer_alert(uint32_t duration_ms) {
+	/////
+	buzzer_phase = 0;
+	//////
     buzzer_timeout = duration_ms;
     HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_SET);
 }

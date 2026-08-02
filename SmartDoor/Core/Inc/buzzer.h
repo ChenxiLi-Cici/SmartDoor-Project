@@ -5,7 +5,7 @@
 
 // Function Prototypes
 void buzzer_alert(uint32_t duration_ms);
-
+void buzzer_off(void);
 void buzzer_tick_1ms(void);
 
 #endif

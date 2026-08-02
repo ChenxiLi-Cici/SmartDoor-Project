@@ -5,7 +5,7 @@
 #include "ldr.h"
 #include <stdbool.h>
 
-#define ALERT_DURATION_MS 100 //alarm 10s
+#define ALERT_DURATION_MS 10000 //alarm 10s
 #define BLINK_INTERVAL_MS 200 //200ms
 #define INVALID_CARD_DURATION_MS 2000//2s
 #define CLOSING_TRAVEL_MS 2500 //door closing time
@@ -305,7 +305,16 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case ALERT:
-		if (event == EVT_TIMEOUT) {
+		if (event == EVT_CARD_SCANNED &&
+        last_card_type == CARD_ADMIN) {
+        buzzer_off();
+        led_off();
+		
+        // Close the door, then return to IDLE
+        current_state = CLOSING;
+        enter_closing();
+    }
+		else if (event == EVT_TIMEOUT) {
 			if (ldr_path_is_clear()) {
 				current_state = CLOSING;
 				enter_closing();

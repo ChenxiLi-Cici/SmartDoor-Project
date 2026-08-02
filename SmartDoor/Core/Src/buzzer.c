@@ -46,6 +46,18 @@ void buzzer_tick_1ms(void) {
 	//////
 }
 
+void buzzer_off(void)
+{
+    buzzer_timeout = 0U;
+    buzzer_phase = 0U;
+
+    HAL_GPIO_WritePin(
+        Buzzer_GPIO_Port,
+        Buzzer_Pin,
+        GPIO_PIN_RESET
+    );
+}
+
 // Start to ring the buzzer
 void buzzer_alert(uint32_t duration_ms) {
 	/////

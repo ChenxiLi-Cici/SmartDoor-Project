@@ -21,7 +21,8 @@ static volatile uint32_t motor_steps_remaining = 0;
 // How many ms until the next step
 static volatile uint32_t motor_ms_before_next_step = 0;
 
-//#define MOTOR_STEP_INTERVAL_MS 3
+// #define MOTOR_STEP_INTERVAL_MS 3
+
 /////
 #define MOTOR_STEP_INTERVAL_MS 3
 
@@ -30,8 +31,6 @@ static volatile uint32_t motor_ms_before_next_step = 0;
 // Where we are inside the current buzzer pulse period
 static uint8_t buzzer_phase = 0;
 
-// 2048 -> 360 degree; 2048÷4=512 -> 90 degree
-#define MOTOR_STEPS_FULL_TRAVEL 512
 /////
 
 // 2048 -> 360 degree; 2048÷4=512 -> 90 degree

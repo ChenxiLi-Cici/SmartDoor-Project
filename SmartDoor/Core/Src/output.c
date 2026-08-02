@@ -191,7 +191,7 @@ void led_off(void) {
 	// Clear first and then turn off the lights
     led_blink_timeout = 0;
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(LED_D3_GPIO_Port, LED_D3_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(ALARM_LED_GPIO_Port, ALARM_LED_Pin, GPIO_PIN_RESET);
 }
 
 // Red LED start to blink
@@ -199,7 +199,7 @@ void led_start_blink(uint32_t duration_ms, uint32_t interval_ms) {
     led_blink_timeout = duration_ms;
     led_blink_interval = interval_ms;
     led_ms_before_next_flip = interval_ms;
-    HAL_GPIO_WritePin(LED_D3_GPIO_Port, LED_D3_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(ALARM_LED_GPIO_Port, ALARM_LED_Pin, GPIO_PIN_SET);
 }
 
 // Start to ring the buzzer

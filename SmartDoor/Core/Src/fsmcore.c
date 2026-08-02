@@ -30,6 +30,9 @@ static DoorState_t current_state;
 static CardType_t last_card_type = CARD_NONE;
 static Direction_t passage_direction = DIR_ENTRY;
 
+// the variable that record which state the admin menu was opened from
+static DoorState_t admin_return_state = IDLE;
+
 static EntryAuthState_t entry_auth_state = ENTRY_AUTH_NONE;
 static bool authorised_entry_queued = false;
 
@@ -82,6 +85,22 @@ static void enter_idle(void) {
 
 static void enter_admin(void) {
 	admin_menu_enter();
+}
+
+
+// Leaving the admin menu.
+static void leave_admin(void) {
+	admin_menu_exit();
+	//  If the door was being held open when the menu was opened
+	if (admin_return_state == UNLOCKED) {
+		/* Restore the state but do not call enter_unlocked()
+		   because the gate has turned 90 degrees */
+		current_state = UNLOCKED;
+		//lcd_print("Event mode", "Door open");
+	} else {
+		current_state = IDLE;
+		enter_idle();
+	}
 }
 
 static void enter_authorised(void) {
@@ -182,6 +201,10 @@ DoorState_t fsm_get_state(void) {
 	return current_state;
 }
 
+DoorState_t fsm_get_admin_origin(void) {
+	return admin_return_state;
+}
+
 
 void fsm_dispatch(Event_t event) {
 	switch (current_state) {
@@ -196,6 +219,7 @@ void fsm_dispatch(Event_t event) {
 					enter_passage();
 					break;
 				case CARD_ADMIN:
+					admin_return_state = IDLE;
 					current_state = ADMIN;
 					enter_admin();
 					break;
@@ -315,14 +339,25 @@ void fsm_dispatch(Event_t event) {
 
 	case ADMIN:
 		if (event == EVT_ADMIN_EXIT) {
+			leave_admin();
+		}
+		// The administrator forced the door open.
+		else if (event == EVT_ADMIN_SET_OPEN) {
+			// clear the menu
 			admin_menu_exit();
-			current_state = IDLE;
-			enter_idle();
-		} else if (event == EVT_KEYPAD_KEY) {
+			current_state = UNLOCKED;
+			enter_unlocked();
+		}
+		// The administrator selected "Restore Normal".
+		else if (event == EVT_ADMIN_SET_NORMAL) {
+			admin_menu_exit();
+			current_state = CLOSING;
+			enter_closing();
+		}
+		// handle key
+		else if (event == EVT_KEYPAD_KEY) {
 			if (pressed_key == '*') {
-				admin_menu_exit();
-				current_state = IDLE;
-				enter_idle();
+				leave_admin();
 			} else {
 				admin_menu_handle_key(pressed_key);
 			}
@@ -334,10 +369,14 @@ void fsm_dispatch(Event_t event) {
 			current_state = CLOSING;
 			enter_closing();
 		}
+		// Enable the administrator to swipe the card to enter the menu even when the door is forcibly opened.
+		else if (event == EVT_CARD_SCANNED && last_card_type == CARD_ADMIN) {
+			admin_return_state = UNLOCKED;
+			current_state = ADMIN;
+			enter_admin();
+		}
 		break;
 
-	case AUTHORISED:
-		break;
 	}
 }
 

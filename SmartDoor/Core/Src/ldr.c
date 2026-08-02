@@ -54,9 +54,7 @@ static ldrState_t ldr_adc_to_state(uint16_t adc_value, ldrState_t previous_state
 			return LDR_CLEAR;
 		}
 		return LDR_BLOCK;
-	}
-
-	else if(previous_state == LDR_CLEAR) {
+	} else {
 		if (adc_value <= block_threshold) {
 			return LDR_BLOCK;
 		}

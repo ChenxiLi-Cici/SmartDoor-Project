@@ -5,7 +5,7 @@
 #include "ldr.h"
 #include <stdbool.h>
 
-#define ALERT_DURATION_MS 10000 //alarm 10s
+#define ALERT_DURATION_MS 100 //alarm 10s
 #define BLINK_INTERVAL_MS 200 //200ms
 #define INVALID_CARD_DURATION_MS 2000//2s
 #define CLOSING_TRAVEL_MS 2500 //door closing time
@@ -80,7 +80,7 @@ static void enter_idle(void) {
 
 	ldr_arm(true);
 	led_off();
-	//lcd_print("Smart Door", "Scan card");
+	lcd_print("Smart Door", "Scan card");
 }
 
 static void enter_admin(void) {
@@ -96,7 +96,7 @@ static void leave_admin(void) {
 		/* Restore the state but do not call enter_unlocked()
 		   because the gate has turned 90 degrees */
 		current_state = UNLOCKED;
-		//lcd_print("Event mode", "Door open");
+		lcd_print("Event mode", "Door open");
 	} else {
 		current_state = IDLE;
 		enter_idle();
@@ -108,7 +108,7 @@ static void enter_authorised(void) {
 	entry_auth_state = ENTRY_AUTH_AVAILABLE;
 	authorised_entry_queued = false;
 
-	// lcd_print("Access granted", "Please enter");
+	lcd_print("Access granted", "Please enter");
 	led_signal_authorised();
 	motor_open(passage_direction);
 	ldr_arm(true);
@@ -116,7 +116,7 @@ static void enter_authorised(void) {
 }
 
 static void enter_passage(void) {
-	//lcd_print("Please pass", "");
+	lcd_print("Please pass", "");
 }
 
 static void enter_exit_passage(void)
@@ -125,7 +125,7 @@ static void enter_exit_passage(void)
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
 
-	// lcd_print("Exit", "Door opening");
+	lcd_print("Exit", "Door opening");
 	motor_open(passage_direction);
 }
 
@@ -163,7 +163,7 @@ static void enter_alert(void) {
 	//Keep monitoring the LDRs and keep the door open while the suspected tailgater is in transit.
 	motor_open(passage_direction);
 
-	//lcd_print("!! ALERT !!", "Tailgating");
+	lcd_print("!! ALERT !!", "Tailgating");
 	led_start_blink(ALERT_DURATION_MS, BLINK_INTERVAL_MS);
 	buzzer_alert(ALERT_DURATION_MS);
 	start_fsm_timer(ALERT_DURATION_MS, FSM_TIMEOUT);
@@ -171,14 +171,14 @@ static void enter_alert(void) {
 
 static void enter_closing(void) {
 	ldr_arm(true);
-	//lcd_print("Closing door", "");
+	lcd_print("Closing door", "");
 	led_off();
 	motor_close();
 	start_fsm_timer(CLOSING_TRAVEL_MS, FSM_TIMEOUT);
 }
 
 static void enter_unlocked(void) {
-	//lcd_print("Event mode", "Door open");
+	lcd_print("Event mode", "Door open");
 	motor_open(DIR_ENTRY);
 }
 
@@ -224,7 +224,7 @@ void fsm_dispatch(Event_t event) {
 					enter_admin();
 					break;
 				case CARD_INVALID:
-					//lcd_print("Invalid card", "");
+					lcd_print("Invalid card", "");
 					led_start_blink(INVALID_CARD_DURATION_MS, BLINK_INTERVAL_MS);
 					start_fsm_timer(INVALID_CARD_DURATION_MS, IDLE_REVERT);
 					break;

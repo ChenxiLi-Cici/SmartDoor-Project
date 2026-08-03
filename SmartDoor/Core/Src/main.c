@@ -371,6 +371,10 @@ int main(void)
 	  /* Poll NFC only while waiting for a card. */
 	  DoorState_t door_state = fsm_get_state();
 
+	  /* Only ask the scheduler while the FSM is in a state that will act on it.
+	   * or  ADMIN/PASSAGE/CLOSING won't handle the schedule event( start/end edge will be missed)
+	   * START is only polled in IDLE,
+	   * END only in UNLOCKED. */
 	  if (door_state == IDLE) {
 		  if (scheduler_check_start()) {
 			  fsm_dispatch(EVT_SCHEDULE_START);
@@ -380,6 +384,22 @@ int main(void)
 		  if (scheduler_check_end()) {
 			  fsm_dispatch(EVT_SCHEDULE_END);
 		  }
+	  }
+
+	  // Keep the clock on the idle screen up to date. Only redraw when the minute changes
+	  static uint8_t last_shown_minute = 0xFF;
+	  if (door_state == IDLE) {
+		  uint8_t h, m;
+		  scheduler_get_time(&h, &m);
+		  if (m != last_shown_minute) {
+			  char idle_line2[20];
+			  snprintf(idle_line2, sizeof(idle_line2), "Scan card  %02u:%02u", h, m);
+			  lcd_print("Smart Door", idle_line2);
+			  last_shown_minute = m;
+		  }
+	  } else {
+		  // force a redraw when we come back to IDLE
+		  last_shown_minute = 0xFF;
 	  }
 
 	  char key = keypad_poll();

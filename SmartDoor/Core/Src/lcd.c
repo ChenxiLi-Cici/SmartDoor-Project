@@ -75,6 +75,16 @@ void LCD_Clear(void)
     HAL_Delay(2);
 }
 
+void LCD_CursorOn(void)
+{
+    LCD_SendCmd(LCD_DISPLAY_ON_CURSOR);
+}
+
+void LCD_CursorOff(void)
+{
+    LCD_SendCmd(LCD_DISPLAY_ON);
+}
+
 void LCD_Init(void)
 {
     HAL_GPIO_WritePin(LCD_E_PORT,  LCD_E_PIN,  GPIO_PIN_RESET);
@@ -104,5 +114,5 @@ void LCD_Init(void)
 
     LCD_SendCmd(LCD_ENTRY_MODE);
 
-    LCD_SendCmd(0b00001111);
+    LCD_SendCmd(LCD_DISPLAY_ON);
 }

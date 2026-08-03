@@ -7,11 +7,7 @@ static volatile uint32_t motor_steps_remaining = 0;
 // How many ms until the next step
 static volatile uint32_t motor_ms_before_next_step = 0;
 
-// #define MOTOR_STEP_INTERVAL_MS 3
-
-/////
 #define MOTOR_STEP_INTERVAL_MS 3
-/////
 
 // 2048 -> 360 degree; 2048÷4=512 -> 90 degree
 #define MOTOR_STEPS_FULL_TRAVEL 512
@@ -127,6 +123,8 @@ static void motor_move_to(int32_t target_position)
     motor_ms_before_next_step = MOTOR_STEP_INTERVAL_MS;
 }
 
+
+// Turn the motor according to the input direction to open the door
 void motor_open(Direction_t dir)
 {
     if (dir == DIR_ENTRY) {
@@ -137,6 +135,7 @@ void motor_open(Direction_t dir)
     }
 }
 
+// Return the door to the closed position
 void motor_close(void)
 {
     motor_move_to(MOTOR_POSITION_CLOSED);

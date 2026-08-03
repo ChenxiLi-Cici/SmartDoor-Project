@@ -9,7 +9,14 @@ extern TIM_HandleTypeDef htim1;
 #define BUZZER_VOLUME_CCR 20U
 
 // How many more ms does the buzzer need to sound
-static volatile uint32_t buzzer_timeout = 0;
+static volatile uint32_t buzzer_timeout = 0U;
+
+// Silence the buzzer
+void buzzer_off(void)
+{
+    buzzer_timeout = 0U;
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, 0U);
+}
 
 // Start to ring the buzzer
 void buzzer_alert(uint32_t duration_ms) {
@@ -17,18 +24,14 @@ void buzzer_alert(uint32_t duration_ms) {
     buzzer_timeout = duration_ms;
 }
 
-void buzzer_off(void)
-{
-    buzzer_timeout = 0U;
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, 0U);
-}
-
+/* Called once per ms from the timer interrupt. Counts the buzzer_timeout down and
+ * silences the buzzer when the time is up. */
 void buzzer_tick_1ms(void) {
-    if (buzzer_timeout > 0) {
+    if (buzzer_timeout > 0U) {
         buzzer_timeout--;
 
-        if (buzzer_timeout == 0) {
-            __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, 0U);
+        if (buzzer_timeout == 0U) {
+            buzzer_off();
         }
     }
 }

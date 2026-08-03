@@ -2,6 +2,7 @@
 #include "output.h"
 #include "scheduler.h"
 #include "fsm.h"
+#include "lcd.h"
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -21,6 +22,7 @@ typedef enum {
 #define ADMIN_CONFIRM_MS 2000
 /* Time entry is 4 digits: HHMM */
 #define ADMIN_DIGITS 4
+
 /* Default value used when no window has been configured yet */
 #define ADMIN_DEFAULT_START_HOUR 9
 #define ADMIN_DEFAULT_START_MIN  0
@@ -32,13 +34,13 @@ static AdminScreen_t screen = ADMIN_MENU_PAGE1;
 /* The 4 digits shown in the [HH:MM] field, and which one the next
  * keypress overwrites. */
 static char    entry[ADMIN_DIGITS];
+// Which entry (0 to 3) will the next key be written into
 static uint8_t cursor = 0;
 
 /* Start time held aside while the end time is being typed */
 static uint8_t pending_start_hour = 0;
 static uint8_t pending_start_min  = 0;
 
-/* ---------------- time entry helpers ---------------- */
 
 // Pre-fill the entry field with the default time
 static void entry_load(uint8_t hour, uint8_t minute) {
@@ -70,7 +72,6 @@ static void entry_to_text(char *out) {
     out[7] = '\0';
 }
 
-// .
 // Turn the 4 digits into hours/minutes; false if not a valid 24-hour reading.
 static bool entry_to_time(uint8_t *hour, uint8_t *minute) {
     uint8_t h = (uint8_t)((entry[0] - '0') * 10 + (entry[1] - '0'));
@@ -80,9 +81,25 @@ static bool entry_to_time(uint8_t *hour, uint8_t *minute) {
         return false;
     }
 
-    *hour   = h;
+    *hour = h;
     *minute = m;
     return true;
+}
+
+// Park the blinking cursor on the digit the next keypress will overwrite
+static void show_entry_cursor(void) {
+    uint8_t col;
+
+    // Column 0 is taken by '[', so the first digit starts at column 1.
+    col = 1 + cursor;
+
+    /* The minute digits sit one column further right, because the colon
+     * takes column 3. */
+    if (cursor >= 2) {
+        col = col + 1;
+    }
+
+    lcd_cursor_at(1, col);
 }
 
 
@@ -95,28 +112,33 @@ static void show_screen(void) {
 
     case ADMIN_MENU_PAGE1:
         lcd_print("Press 1-4 B:Next", "1.Schdl  2.Lock");
+        lcd_cursor_hide();
         break;
 
     case ADMIN_MENU_PAGE2:
         lcd_print("Press 1-4 A:Back", "3.Clock  4.Exit");
+        lcd_cursor_hide();
         break;
 
     case ADMIN_SCHED_START:
         entry_to_text(field);
         snprintf(line2, sizeof(line2), "%s   B:Nxt", field);
         lcd_print("Set Start C:Off", line2);
+        show_entry_cursor();
         break;
 
     case ADMIN_SCHED_END:
         entry_to_text(field);
         snprintf(line2, sizeof(line2), "%s  #:Save", field);
         lcd_print("Set End  A:Back", line2);
+        show_entry_cursor();
         break;
 
     case ADMIN_SET_CLOCK:
         entry_to_text(field);
         snprintf(line2, sizeof(line2), "%s  #:Save", field);
         lcd_print("Set Clock A:Back", line2);
+        show_entry_cursor();
         break;
 
     case ADMIN_LOCK_CONFIG:
@@ -125,12 +147,14 @@ static void show_screen(void) {
         } else {
             lcd_print("#:Select A:Back", ">Set OPEN");
         }
+        lcd_cursor_hide();
         break;
     }
 }
 
 // public interface
 
+// Called when opening the menu. Shows a welcome page, then resets to the first page.
 void admin_menu_enter(void) {
     printf("Admin: menu opened\r\n");
 
@@ -141,11 +165,13 @@ void admin_menu_enter(void) {
     show_screen();
 }
 
+// resets the screen state
 void admin_menu_exit(void) {
     screen = ADMIN_MENU_PAGE1;
     printf("Admin: menu closed\r\n");
 }
 
+// Handle one keypress
 void admin_menu_handle_key(char key) {
 
     switch (screen) {

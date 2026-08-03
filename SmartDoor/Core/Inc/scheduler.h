@@ -30,4 +30,5 @@ void scheduler_get_time(uint8_t *hour, uint8_t *minute);
 bool scheduler_check_start(void);
 bool scheduler_check_end(void);
 
+
 #endif /* SCHEDULER_H */

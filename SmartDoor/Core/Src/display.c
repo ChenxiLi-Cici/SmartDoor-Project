@@ -3,7 +3,7 @@
 
 #define LCD_COLS 16
 
-//
+// print line1 and line2 to the LCD
 void lcd_print(const char *line1, const char *line2) {
 	const char *lines[2] = { line1, line2 };
 
@@ -26,4 +26,17 @@ void lcd_print(const char *line1, const char *line2) {
 		}
 	}
 
+}
+
+// Show the blinking hardware cursor at the given position.
+void lcd_cursor_at(uint8_t row, uint8_t col)
+{
+	LCD_SetCursor(row, col);
+	LCD_CursorOn();
+}
+
+// hide the cursor
+void lcd_cursor_hide(void)
+{
+	LCD_CursorOff();
 }

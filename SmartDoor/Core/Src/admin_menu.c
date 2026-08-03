@@ -41,7 +41,6 @@ static uint8_t cursor = 0;
 static uint8_t pending_start_hour = 0;
 static uint8_t pending_start_min  = 0;
 
-/* ---------------- time entry helpers ---------------- */
 
 // Pre-fill the entry field with the default time
 static void entry_load(uint8_t hour, uint8_t minute) {
@@ -73,7 +72,6 @@ static void entry_to_text(char *out) {
     out[7] = '\0';
 }
 
-// .
 // Turn the 4 digits into hours/minutes; false if not a valid 24-hour reading.
 static bool entry_to_time(uint8_t *hour, uint8_t *minute) {
     uint8_t h = (uint8_t)((entry[0] - '0') * 10 + (entry[1] - '0'));
@@ -83,11 +81,12 @@ static bool entry_to_time(uint8_t *hour, uint8_t *minute) {
         return false;
     }
 
-    *hour   = h;
+    *hour = h;
     *minute = m;
     return true;
 }
 
+// Park the blinking cursor on the digit the next keypress will overwrite
 static void show_entry_cursor(void) {
     uint8_t col;
 
@@ -155,6 +154,7 @@ static void show_screen(void) {
 
 // public interface
 
+// Called when opening the menu. Shows a welcome page, then resets to the first page.
 void admin_menu_enter(void) {
     printf("Admin: menu opened\r\n");
 
@@ -165,11 +165,13 @@ void admin_menu_enter(void) {
     show_screen();
 }
 
+// resets the screen state
 void admin_menu_exit(void) {
     screen = ADMIN_MENU_PAGE1;
     printf("Admin: menu closed\r\n");
 }
 
+// Handle one keypress
 void admin_menu_handle_key(char key) {
 
     switch (screen) {

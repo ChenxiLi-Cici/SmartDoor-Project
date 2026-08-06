@@ -386,6 +386,10 @@ void fsm_dispatch(Event_t event) {
 		}
 		break;
 
+	case AUTHORISED:
+		// AUTHORISED is only a short transition before PASSAGE.
+		break;
+
 	}
 }
 

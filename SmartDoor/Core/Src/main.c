@@ -114,10 +114,12 @@ static HAL_StatusTypeDef PN532_ReadResponse(uint8_t *buf, uint16_t len);
 
 #ifdef __GNUC__
 /**
-  * @brief  重定向 printf 到 USART2（板载 ST-Link 虚拟串口），适配 GCC 工具链
+  * @brief Redirect printf to USART2 for the ST-Link serial port.
   */
 int _write(int file, char *ptr, int len)
 {
+    // printf does not use file, but _write must keep this parameter.
+    (void)file;
     HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 0xFFFF);
     return len;
 }

@@ -17,7 +17,7 @@ typedef bool ldrState_t;
 void ldr_init(void);
 
 // Enable or disable LDR passage detection.
-// Calling this function also starts a new passage sequence.
+// Disabling detection cancels any incomplete passage sequence.
 void ldr_arm(bool armed);
 
 // Read the raw ADC value from both LDRs.

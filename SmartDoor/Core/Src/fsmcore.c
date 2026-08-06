@@ -177,6 +177,21 @@ static void enter_closing(void) {
 	start_fsm_timer(CLOSING_TRAVEL_MS, FSM_TIMEOUT);
 }
 
+// Start closing only when both LDRs are clear.
+// If the passage is blocked, wait one second before checking again.
+static void request_close(void)
+{
+	if (!ldr_path_is_clear()) {
+		current_state = PASSAGE;
+		lcd_print("Path blocked", "Waiting to close");
+		start_fsm_timer(1000U, FSM_TIMEOUT);
+		return;
+	}
+
+	current_state = CLOSING;
+	enter_closing();
+}
+
 static void enter_unlocked(void) {
 	lcd_print("Event mode", "Door open");
 	motor_open(DIR_ENTRY);
@@ -280,21 +295,12 @@ void fsm_dispatch(Event_t event) {
 				start_queued_entry();
 			}
 			else {
-			current_state = CLOSING;
-			enter_closing();
+				request_close();
 			}
 		}
 
 		else if (event == EVT_TIMEOUT) {
-		    if (ldr_path_is_clear()) {
-		        current_state = CLOSING;
-		        enter_closing();
-		    }
-		    else {
-		    	// A sensor is still blocked.
-		    	// Do not close, check again after one second.
-		    	start_fsm_timer(1000U, FSM_TIMEOUT);
-		    }
+			request_close();
 		}
 
 		else if (event == EVT_TAILGATE_DETECTED) {
@@ -306,24 +312,15 @@ void fsm_dispatch(Event_t event) {
 
 	case ALERT:
 		if (event == EVT_CARD_SCANNED &&
-        last_card_type == CARD_ADMIN) {
-        buzzer_off();
-        led_off();
-		
-        // Close the door, then return to IDLE
-        current_state = CLOSING;
-        enter_closing();
-    }
+			last_card_type == CARD_ADMIN) {
+			buzzer_off();
+			led_off();
+
+			// Stop the alert, but close only after the passage is clear.
+			request_close();
+		}
 		else if (event == EVT_TIMEOUT) {
-			if (ldr_path_is_clear()) {
-				current_state = CLOSING;
-				enter_closing();
-			}
-			// Alarm duration has elapsed, but somebody is still in transit.
-			// Keep the door open and check again after one second.
-			else {
-				start_fsm_timer(1000U, FSM_TIMEOUT);
-			}
+			request_close();
 		}
 		break;
 
@@ -360,8 +357,7 @@ void fsm_dispatch(Event_t event) {
 		// The administrator selected "Restore Normal".
 		else if (event == EVT_ADMIN_SET_NORMAL) {
 			admin_menu_exit();
-			current_state = CLOSING;
-			enter_closing();
+			request_close();
 		}
 		// handle key
 		else if (event == EVT_KEYPAD_KEY) {
@@ -375,8 +371,7 @@ void fsm_dispatch(Event_t event) {
 
 	case UNLOCKED:
 		if (event == EVT_SCHEDULE_END) {
-			current_state = CLOSING;
-			enter_closing();
+			request_close();
 		}
 		// Enable the administrator to swipe the card to enter the menu even when the door is forcibly opened.
 		else if (event == EVT_CARD_SCANNED && last_card_type == CARD_ADMIN) {

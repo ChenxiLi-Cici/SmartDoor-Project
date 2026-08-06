@@ -393,10 +393,9 @@ Event_t ldr_poll(void)
 				printf("Simultaneous request detected during exit\r\n");
 			}
 
-			// LDR1 cleared and LDR2 blocked in a same polling cycle.
+			// LDR2 cleared and LDR1 blocked in the same polling cycle.
 			else if (ldr1_just_block) {
 				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR;
-				event = EVT_EXIT_CONFIRMED;
 
 				printf("Direction confirmed: EXIT\r\n");
 			}
@@ -415,7 +414,6 @@ Event_t ldr_poll(void)
 			// After LDR2 cleared then blocking LDR1
 			if (ldr1_just_block) {
 				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR;
-				event = EVT_EXIT_CONFIRMED;
 
 				printf("Exit confirmed: waiting for LDR1 to clear\r\n");
 			}

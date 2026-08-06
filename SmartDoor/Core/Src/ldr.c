@@ -44,9 +44,6 @@ typedef enum
 extern ADC_HandleTypeDef hadc2;  // LDR1 is connected to PC4, ADC2 Channel 5.
 extern ADC_HandleTypeDef hadc3;  // LDR2 is connected to PB1, ADC3 Channel 1.
 
-// LDR readings are processed only while this flag is true.
-static bool ldr_is_armed = false;
-
 // Store the last print time so that raw ADC values are not printed every loop.
 static uint32_t last_ldr_print_ms = 0;
 
@@ -164,8 +161,6 @@ static bool adc_read_once(ADC_HandleTypeDef *hadc, uint16_t *value)
 // Initialize all LDR variables to a known state when the program starts.
 void ldr_init(void)
 {
-	// The FSM will enable LDR processing after its own initialization.
-	ldr_is_armed = false;
 	last_ldr_print_ms = 0;
 
 	// Begin with both sensors treated as clear.
@@ -183,19 +178,6 @@ void ldr_init(void)
 
 	ldr_sequence_reset();
 }
-
-// Enable or disable LDR processing.
-// Enable: Enabling preserves the current physical sensor states.
-// Disable: Ignore any incomplete passage sequence state.
-void ldr_arm(bool armed)
-{
-	ldr_is_armed = armed;
-
-	if(!armed) {
-		ldr_sequence_reset();
-	}
-}
-
 // Read both LDR ADC channels and return the results through two output pointers.
 // Return true only when both ADC conversions are successful.
 bool ldr_read_raw(uint16_t *ldr1_value, uint16_t *ldr2_value)
@@ -233,11 +215,6 @@ Event_t ldr_poll(void)
 
 	// EVT_NONE means that no complete state-machine event was detected this loop.
 	Event_t event = EVT_NONE;
-
-	// Do not read or process the sensors while LDR detection is disabled.
-	if (!ldr_is_armed) {
-		return EVT_NONE;
-	}
 
 	// Both readings are required because direction detection uses the two sensors together.
 	if (!ldr_read_raw(&ldr1_value, &ldr2_value)) {

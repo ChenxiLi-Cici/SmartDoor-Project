@@ -77,7 +77,6 @@ static void enter_idle(void) {
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
 
-	ldr_arm(true);
 	led_off();
 	lcd_print("Smart Door", "Scan card");
 }
@@ -110,7 +109,6 @@ static void enter_authorised(void) {
 	lcd_print("Access granted", "Please enter");
 	led_signal_authorised();
 	motor_open(passage_direction);
-	ldr_arm(true);
 	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
 }
 
@@ -152,8 +150,8 @@ static void start_queued_entry(void)
 	authorised_entry_queued = false;
 	passage_direction = DIR_ENTRY;
 
-	// Start a fresh LDR sequence for the authorized entrant after the exit side has cleared.
-	ldr_arm(true);
+	// The simultaneous sequence has already reset after both LDRs became clear.
+	// Reopen the door for the queued authorized entrant.
 	motor_open(DIR_ENTRY);
 	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
 }
@@ -169,7 +167,6 @@ static void enter_alert(void) {
 }
 
 static void enter_closing(void) {
-	ldr_arm(true);
 	lcd_print("Closing door", "");
 	led_off();
 	motor_close();

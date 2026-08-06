@@ -16,10 +16,6 @@ typedef bool ldrState_t;
 // This function should be called once during program initialisation.
 void ldr_init(void);
 
-// Enable or disable LDR passage detection.
-// Disabling detection cancels any incomplete passage sequence.
-void ldr_arm(bool armed);
-
 // Read the raw ADC value from both LDRs.
 // The two pointer arguments are used to return the ADC results to the caller.
 // Return false if either ADC conversion fails.

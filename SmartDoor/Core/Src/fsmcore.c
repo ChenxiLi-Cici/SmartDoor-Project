@@ -1,7 +1,6 @@
 #include "fsm.h"
 #include "output.h"
 #include "admin_menu.h" 
-#include "input.h"
 #include "ldr.h"
 #include <stdbool.h>
 

@@ -7,7 +7,7 @@
 static volatile uint32_t motor_steps_remaining = 0;
 // How many ms until the next step
 static volatile uint32_t motor_ms_before_next_step = 0;
-
+static volatile bool motor_release_pending = false;
 #define MOTOR_STEP_INTERVAL_MS 3
 
 /* Manually adjust the initial position of motor */
@@ -86,6 +86,21 @@ void motor_tick_1ms(void) {
 
     if (!motor_manual_adjust_active &&
         motor_steps_remaining == 0) {
+
+        /* Do not release the coils in the same interrupt as the final step.
+         * Keep that final phase active for one complete step interval so the
+         * rotor has time to reach it, then remove power. */
+        if (motor_release_pending) {
+            if (motor_ms_before_next_step > 0U) {
+                motor_ms_before_next_step--;
+            }
+
+            if (motor_ms_before_next_step == 0U) {
+                motor_release();
+                motor_release_pending = false;
+            }
+        }
+
         return;
     }
 
@@ -113,13 +128,14 @@ void motor_tick_1ms(void) {
             motor_position_steps += motor_step_dir;
             motor_steps_remaining--;
             motor_ms_before_next_step = MOTOR_STEP_INTERVAL_MS;
-        
+
             if (motor_steps_remaining == 0) {
-                motor_release();
+                motor_release_pending = true;
             }
         }
     }
 }   
+
 
 
 // Move the motor to an absolute position, given in steps from the closed position
@@ -140,6 +156,7 @@ static void motor_move_to(int32_t target_position)
         sw1_debounce_counter = 0U;
         sw2_debounce_counter = 0U;
         motor_position_steps = MOTOR_POSITION_CLOSED;
+        motor_release_pending = false;
         motor_release();
     }
 
@@ -156,11 +173,13 @@ static void motor_move_to(int32_t target_position)
         motor_steps_remaining = (uint32_t)(-difference);
     }
     else {
-        motor_ms_before_next_step = 0;
-        motor_release();
+        if (!motor_release_pending) {
+            motor_ms_before_next_step = 0;
+            motor_release();
+        }
         return;
     }
-
+    motor_release_pending = false;
     motor_ms_before_next_step = MOTOR_STEP_INTERVAL_MS;
 }
 
@@ -194,6 +213,7 @@ static void motor_manual_adjust_tick_1ms(void)
             motor_manual_adjust_active = false;
             motor_steps_remaining = 0U;
             motor_ms_before_next_step = 0U;
+            motor_release_pending = false;
 
             motor_position_steps = MOTOR_POSITION_CLOSED;
 
@@ -246,6 +266,8 @@ static void motor_manual_adjust_tick_1ms(void)
             motor_step_dir = -1;
 
             motor_ms_before_next_step = 0U;
+            motor_release_pending = false;
+
             motor_manual_adjust_active = true;
         }
         return;
@@ -259,8 +281,9 @@ static void motor_manual_adjust_tick_1ms(void)
             motor_manual_adjust_active = false;
             motor_steps_remaining = 0U;
             motor_ms_before_next_step = 0U;
-            motor_position_steps = MOTOR_POSITION_CLOSED;
+            motor_release_pending = false;
 
+            motor_position_steps = MOTOR_POSITION_CLOSED;
             motor_release();
         }
 
@@ -276,7 +299,7 @@ static void motor_manual_adjust_tick_1ms(void)
 
         // Perform the first step immediately
         motor_ms_before_next_step = 0U;
-
+        motor_release_pending = false;
         motor_manual_adjust_active = true;
     }
 
@@ -287,6 +310,7 @@ static void motor_manual_adjust_tick_1ms(void)
         motor_manual_adjust_active = false;
         motor_steps_remaining = 0U;
         motor_ms_before_next_step = 0U;
+        motor_release_pending = false;
         motor_position_steps = MOTOR_POSITION_CLOSED;
 
         motor_release();

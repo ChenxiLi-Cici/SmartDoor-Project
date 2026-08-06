@@ -14,9 +14,10 @@ static volatile uint32_t led_blink_interval = 0;
 // How many ms are there until the next flip
 static volatile uint32_t led_ms_before_next_flip = 0;
 
-
+/* Called once per ms from the timer interrupt. Counts the blink down and
+ * toggles the alarm LED every led_blink_interval */
 void led_tick_1ms(void) {
-	/*  alarm LED blinking */
+	// alarm LED blinking
 	if (led_blink_timeout > 0) {
 		led_blink_timeout--;
 
@@ -28,6 +29,8 @@ void led_tick_1ms(void) {
 			led_ms_before_next_flip = led_blink_interval;
 		}
 
+		/* The state in which the light stops when the flashing ends is random,
+		 * so it is forcibly turned off when the blink is over. */
 		if (led_blink_timeout == 0) {
 			HAL_GPIO_WritePin(ALARM_LED_GPIO_Port, ALARM_LED_Pin, GPIO_PIN_RESET);
 		}
@@ -41,7 +44,7 @@ void led_signal_authorised(void) {
 
 // Both the green and red lights go out
 void led_off(void) {
-	// Clear first and then turn off the lights
+	// Clear the blink_timeout first and then turn off the lights
     led_blink_timeout = 0;
     HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(ALARM_LED_GPIO_Port, ALARM_LED_Pin, GPIO_PIN_RESET);

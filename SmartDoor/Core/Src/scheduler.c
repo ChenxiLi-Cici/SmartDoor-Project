@@ -13,7 +13,8 @@ static uint16_t window_end_min   = 0;
 // Has the administrator set up a unlock window
 static bool window_configured = false;
 
-static bool currently_unlocked = false;
+// True while the scheduler is currently holding the door open
+static bool schedule_holds_door_open = false;
 
 // Calculate which minute of the day the "hour:minute" represents
 static uint16_t minutes_of_day(uint8_t hour, uint8_t minute) {
@@ -46,8 +47,6 @@ void scheduler_set_window(uint8_t start_hour, uint8_t start_min,
     window_start_min   = minutes_of_day(start_hour, start_min);
     window_end_min     = minutes_of_day(end_hour, end_min);
     window_configured  = true;
-//    // Ensure that after the window is reset, it always be judged from the ununlocked state
-//    currently_unlocked = false;
 
     printf("Scheduler: window set %02u:%02u - %02u:%02u\r\n",
            start_hour, start_min, end_hour, end_min);
@@ -67,11 +66,6 @@ void scheduler_set_clock(uint8_t hour, uint8_t minute) {
 		return;
 	}
 
-//    /* Since we have modified the absolute time,
-//     * whether it is unlock or not needs to be rejudged
-//    */
-//    currently_unlocked = false;
-
     printf("Scheduler: clock set to %02u:%02u\r\n", hour, minute);
 }
 
@@ -80,7 +74,6 @@ void scheduler_set_clock(uint8_t hour, uint8_t minute) {
 // called when the administrator wants to cancel the scheduled unlock
 void scheduler_disable(void) {
     window_configured  = false;
-//    currently_unlocked = false;
     printf("Scheduler: window disabled\r\n");
 }
 
@@ -127,32 +120,40 @@ void scheduler_get_time(uint8_t *hour, uint8_t *minute) {
 
 // return 1 exactly when the current time crosses into the configured window.
 bool scheduler_check_start(void) {
-	/* No configured window or
-	 *  it is already in the unlocked state (true has been triggered once before)
-	 */
-    if (!window_configured || currently_unlocked) {
-        return false;
-    }
-    // Read the current time from RTC and see if it falls within the configuration window.
-    if (is_in_window(current_minute_of_day())) {
-        currently_unlocked = true;
-        printf("Scheduler: window START\r\n");
-        return true;
-    }
-    return false;
+
+    // Nothing configured
+    if (!window_configured) {
+		schedule_holds_door_open = false;
+		return false;
+	}
+
+    // be out of the window range
+	if (!is_in_window(current_minute_of_day())) {
+		schedule_holds_door_open = false;
+		return false;
+	}
+
+	/* If the door has already been opened by the scheduler,
+	there is no need to trigger the start signal again */
+	if (schedule_holds_door_open) {
+		return false;
+	}
+
+	schedule_holds_door_open = true;
+	printf("Scheduler: window START\r\n");
+	return true;
 }
 
 // return 1 exactly when the current time crosses out of the configured window.
 bool scheduler_check_end(void) {
-	// No configured window or
 	// It is not unlocked yet
-    if (!currently_unlocked) {
+    if (!schedule_holds_door_open) {
         return false;
     }
 
     // The window was cancelled, or it's no longer within the window range now.
     if (!window_configured || !is_in_window(current_minute_of_day())) {
-        currently_unlocked = false;
+        schedule_holds_door_open = false;
         printf("Scheduler: window END\r\n");
         return true;
     }

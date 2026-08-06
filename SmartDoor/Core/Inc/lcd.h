@@ -26,6 +26,7 @@
 #define LCD_ENTRY_MODE      0b00000110
 #define LCD_DISPLAY_OFF     0b00001000
 #define LCD_DISPLAY_ON      0b00001100
+#define LCD_DISPLAY_ON_CURSOR 0b00001111
 #define LCD_FUNCTION_SET    0b00101000
 
 #define LCD_ROW1_START      0x00
@@ -39,5 +40,7 @@ void LCD_SendData(uint8_t c);
 void LCD_SendStr(char *str);
 void LCD_SetCursor(uint8_t row, uint8_t col);
 void LCD_Clear(void);
+void LCD_CursorOn(void);
+void LCD_CursorOff(void);
 
 #endif /* LCD_H */

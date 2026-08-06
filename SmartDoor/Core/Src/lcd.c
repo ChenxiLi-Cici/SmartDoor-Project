@@ -31,6 +31,7 @@ void LCD_PutNibble(uint8_t nibble)
     LCD_Pulse();
 }
 
+// Send one command byte (RS low)
 void LCD_SendCmd(uint8_t c)
 {
     HAL_GPIO_WritePin(LCD_RS_PORT, LCD_RS_PIN, GPIO_PIN_RESET);
@@ -42,6 +43,7 @@ void LCD_SendCmd(uint8_t c)
     HAL_Delay(2);
 }
 
+// Send one character byte (RS high)
 void LCD_SendData(uint8_t c)
 {
     HAL_GPIO_WritePin(LCD_RS_PORT, LCD_RS_PIN, GPIO_PIN_SET);
@@ -53,6 +55,7 @@ void LCD_SendData(uint8_t c)
     LCD_DelayUs(50);
 }
 
+// Send a string
 void LCD_SendStr(char *str)
 {
     while (*str)
@@ -62,6 +65,7 @@ void LCD_SendStr(char *str)
     }
 }
 
+// Move the cursor to `row` and `col`
 void LCD_SetCursor(uint8_t row, uint8_t col)
 {
     uint8_t addr = (row == 0) ? (LCD_ROW1_START + col)
@@ -69,12 +73,26 @@ void LCD_SetCursor(uint8_t row, uint8_t col)
     LCD_SendCmd(0x80 | addr);
 }
 
+// Clear the whole display and return the cursor home
 void LCD_Clear(void)
 {
     LCD_SendCmd(LCD_CLEAR_DISPLAY);
     HAL_Delay(2);
 }
 
+// Show the blinking hardware cursor
+void LCD_CursorOn(void)
+{
+    LCD_SendCmd(LCD_DISPLAY_ON_CURSOR);
+}
+
+// Hide the hardware cursor, display stays on
+void LCD_CursorOff(void)
+{
+    LCD_SendCmd(LCD_DISPLAY_ON);
+}
+
+// Initialize the LCD
 void LCD_Init(void)
 {
     HAL_GPIO_WritePin(LCD_E_PORT,  LCD_E_PIN,  GPIO_PIN_RESET);
@@ -104,5 +122,5 @@ void LCD_Init(void)
 
     LCD_SendCmd(LCD_ENTRY_MODE);
 
-    LCD_SendCmd(0b00001111);
+    LCD_SendCmd(LCD_DISPLAY_ON);
 }

@@ -411,8 +411,8 @@ void fsm_poll(void) {
 		fsm_timer_purpose = NONE;
 		if (purpose == FSM_TIMEOUT) {
 			fsm_dispatch(EVT_TIMEOUT);
-		} else if (purpose == IDLE_REVERT) {
-			//lcd_print("Smart Door", "Scan card...");
+		} else if ((purpose == IDLE_REVERT) && (current_state == IDLE)) {
+			enter_idle();
 		}
 	}
 }

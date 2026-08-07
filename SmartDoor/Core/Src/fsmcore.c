@@ -76,6 +76,7 @@ static void enter_idle(void) {
 	reset_fsm_timer();
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
+	ldr_unlock_direction();
 
 	led_off();
 	lcd_print("Smart Door", "Scan card");
@@ -105,6 +106,7 @@ static void enter_authorised(void) {
 	passage_direction = DIR_ENTRY;
 	entry_auth_state = ENTRY_AUTH_AVAILABLE;
 	authorised_entry_queued = false;
+	ldr_lock_direction(DIR_ENTRY);
 
 	lcd_print("Access granted", "Please enter");
 	led_signal_authorised();
@@ -121,6 +123,7 @@ static void enter_exit_passage(void)
 	passage_direction = DIR_EXIT;
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
+	ldr_lock_direction(DIR_EXIT);
 
 	lcd_print("Exit", "Door opening");
 	motor_open(passage_direction);
@@ -130,7 +133,9 @@ static void reopen_for_safety(Direction_t direction)
 {
 	reset_fsm_timer();
 	passage_direction = direction;
+	ldr_lock_direction(direction);
 	motor_open(direction);
+	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
 }
 
 static void start_simultaneous_request(void)
@@ -142,6 +147,7 @@ static void start_simultaneous_request(void)
 
 	//Exit has priority because it does not require authorization and people inside must not be trapped.
 	passage_direction = DIR_EXIT;
+	ldr_lock_direction(DIR_EXIT);
 	motor_open(DIR_EXIT);
 }
 
@@ -149,6 +155,7 @@ static void start_queued_entry(void)
 {
 	authorised_entry_queued = false;
 	passage_direction = DIR_ENTRY;
+	ldr_lock_direction(DIR_ENTRY);
 
 	// The simultaneous sequence has already reset after both LDRs became clear.
 	// Reopen the door for the queued authorized entrant.
@@ -158,6 +165,7 @@ static void start_queued_entry(void)
 
 static void enter_alert(void) {
 	//Keep monitoring the LDRs and keep the door open while the suspected tailgater is in transit.
+	ldr_lock_direction(passage_direction);
 	motor_open(passage_direction);
 
 	lcd_print("!! ALERT !!", "Tailgating");
@@ -189,6 +197,7 @@ static void request_close(void)
 }
 
 static void enter_unlocked(void) {
+	ldr_unlock_direction();
 	lcd_print("Event mode", "Door open");
 	motor_open(DIR_ENTRY);
 }
@@ -259,7 +268,7 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case PASSAGE:
-		if (event == EVT_ENTRY_CONFIRMED) {
+		if ((event == EVT_ENTRY_CONFIRMED) && (passage_direction == DIR_ENTRY)) {
 			//The first confirmed entrant consumes the one available authorization.
 			if (entry_auth_state == ENTRY_AUTH_AVAILABLE) {
 				entry_auth_state = ENTRY_AUTH_USED;
@@ -271,20 +280,21 @@ void fsm_dispatch(Event_t event) {
 				enter_alert();
 			}
 		}
-		else if (event == EVT_ENTRY_REQUEST) {
+		else if ((event == EVT_ENTRY_REQUEST) && (passage_direction == DIR_ENTRY)) {
 			// The authorized entrant has started moving.
 			// LDR sequence timing now controls the passage.
 			reset_fsm_timer();
 		}
 
-		else if (event == EVT_EXIT_REQUEST) {
-			// An exit appeared while an entry authorisation is active.
-			// Queue the entry and serve exit first.
-			start_simultaneous_request();
+		else if ((event == EVT_EXIT_REQUEST) && (passage_direction == DIR_EXIT)) {
+			// The owner has started moving; the LDR sequence now controls
+			// passage completion.
+			reset_fsm_timer();
 		}
 
 		else if (event == EVT_BOTH_LDRS_BLOCKED) {
-		        start_simultaneous_request();
+			// A passage already has an owner. Keep its direction and make the
+			// opposite side wait until this passage and closing cycle finish.
 		}
 
 		else if ((event == EVT_PASSAGE_DONE) || (event == EVT_PASSAGE_CANCELLED)) {
@@ -300,7 +310,7 @@ void fsm_dispatch(Event_t event) {
 			request_close();
 		}
 
-		else if (event == EVT_TAILGATE_DETECTED) {
+		else if ((event == EVT_TAILGATE_DETECTED) && (passage_direction == DIR_ENTRY)) {
 					passage_direction = DIR_ENTRY;
 					current_state = ALERT;
 					enter_alert();

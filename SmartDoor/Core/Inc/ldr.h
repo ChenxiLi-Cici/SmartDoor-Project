@@ -25,6 +25,15 @@ bool ldr_read_raw(uint16_t *ldr1_value, uint16_t *ldr2_value);
 // The FSM uses this function before it allows the door to close.
 bool ldr_path_is_clear(void);
 
+// Lock passage recognition to the direction currently owned by the FSM.
+// The opposite sensor is still monitored for closing safety, but it cannot
+// start a new passage or reverse the motor until the lock is released.
+void ldr_lock_direction(Direction_t direction);
+
+// Return to automatic direction detection after the owned passage and
+// closing cycle have both finished.
+void ldr_unlock_direction(void);
+
 // Read, debounce and process both LDRs once.
 // Return the event produced by the passage sequence, or EVT_NONE if no event occurred.
 Event_t ldr_poll(void);

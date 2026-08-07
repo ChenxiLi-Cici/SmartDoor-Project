@@ -1,7 +1,6 @@
 #include "fsm.h"
 #include "output.h"
 #include "admin_menu.h" 
-#include "input.h"
 #include "ldr.h"
 #include <stdbool.h>
 
@@ -78,7 +77,6 @@ static void enter_idle(void) {
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
 
-	ldr_arm(true);
 	led_off();
 	lcd_print("Smart Door", "Scan card");
 }
@@ -111,7 +109,6 @@ static void enter_authorised(void) {
 	lcd_print("Access granted", "Please enter");
 	led_signal_authorised();
 	motor_open(passage_direction);
-	ldr_arm(true);
 	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
 }
 
@@ -153,8 +150,8 @@ static void start_queued_entry(void)
 	authorised_entry_queued = false;
 	passage_direction = DIR_ENTRY;
 
-	// Start a fresh LDR sequence for the authorized entrant after the exit side has cleared.
-	ldr_arm(true);
+	// The simultaneous sequence has already reset after both LDRs became clear.
+	// Reopen the door for the queued authorized entrant.
 	motor_open(DIR_ENTRY);
 	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
 }
@@ -170,11 +167,25 @@ static void enter_alert(void) {
 }
 
 static void enter_closing(void) {
-	ldr_arm(true);
 	lcd_print("Closing door", "");
 	led_off();
 	motor_close();
 	start_fsm_timer(CLOSING_TRAVEL_MS, FSM_TIMEOUT);
+}
+
+// Start closing only when both LDRs are clear.
+// If the passage is blocked, wait one second before checking again.
+static void request_close(void)
+{
+	if (!ldr_path_is_clear()) {
+		current_state = PASSAGE;
+		lcd_print("Path blocked", "Waiting to close");
+		start_fsm_timer(1000U, FSM_TIMEOUT);
+		return;
+	}
+
+	current_state = CLOSING;
+	enter_closing();
 }
 
 static void enter_unlocked(void) {
@@ -280,21 +291,12 @@ void fsm_dispatch(Event_t event) {
 				start_queued_entry();
 			}
 			else {
-			current_state = CLOSING;
-			enter_closing();
+				request_close();
 			}
 		}
 
 		else if (event == EVT_TIMEOUT) {
-		    if (ldr_path_is_clear()) {
-		        current_state = CLOSING;
-		        enter_closing();
-		    }
-		    else {
-		    	// A sensor is still blocked.
-		    	// Do not close, check again after one second.
-		    	start_fsm_timer(1000U, FSM_TIMEOUT);
-		    }
+			request_close();
 		}
 
 		else if (event == EVT_TAILGATE_DETECTED) {
@@ -306,24 +308,15 @@ void fsm_dispatch(Event_t event) {
 
 	case ALERT:
 		if (event == EVT_CARD_SCANNED &&
-        last_card_type == CARD_ADMIN) {
-        buzzer_off();
-        led_off();
-		
-        // Close the door, then return to IDLE
-        current_state = CLOSING;
-        enter_closing();
-    }
+			last_card_type == CARD_ADMIN) {
+			buzzer_off();
+			led_off();
+
+			// Stop the alert, but close only after the passage is clear.
+			request_close();
+		}
 		else if (event == EVT_TIMEOUT) {
-			if (ldr_path_is_clear()) {
-				current_state = CLOSING;
-				enter_closing();
-			}
-			// Alarm duration has elapsed, but somebody is still in transit.
-			// Keep the door open and check again after one second.
-			else {
-				start_fsm_timer(1000U, FSM_TIMEOUT);
-			}
+			request_close();
 		}
 		break;
 
@@ -360,8 +353,7 @@ void fsm_dispatch(Event_t event) {
 		// The administrator selected "Restore Normal".
 		else if (event == EVT_ADMIN_SET_NORMAL) {
 			admin_menu_exit();
-			current_state = CLOSING;
-			enter_closing();
+			request_close();
 		}
 		// handle key
 		else if (event == EVT_KEYPAD_KEY) {
@@ -375,8 +367,7 @@ void fsm_dispatch(Event_t event) {
 
 	case UNLOCKED:
 		if (event == EVT_SCHEDULE_END) {
-			current_state = CLOSING;
-			enter_closing();
+			request_close();
 		}
 		// Enable the administrator to swipe the card to enter the menu even when the door is forcibly opened.
 		else if (event == EVT_CARD_SCANNED && last_card_type == CARD_ADMIN) {
@@ -417,8 +408,8 @@ void fsm_poll(void) {
 		fsm_timer_purpose = NONE;
 		if (purpose == FSM_TIMEOUT) {
 			fsm_dispatch(EVT_TIMEOUT);
-		} else if (purpose == IDLE_REVERT) {
-			//lcd_print("Smart Door", "Scan card...");
+		} else if ((purpose == IDLE_REVERT) && (current_state == IDLE)) {
+			enter_idle();
 		}
 	}
 }

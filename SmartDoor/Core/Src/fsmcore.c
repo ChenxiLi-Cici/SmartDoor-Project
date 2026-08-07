@@ -5,15 +5,19 @@
 #include "scheduler.h"
 #include <stdbool.h>
 
-#define ALERT_DURATION_MS 10000 //alarm 10s
-#define BLINK_INTERVAL_MS 200 //200ms
-#define INVALID_CARD_DURATION_MS 2000//2s
-#define CLOSING_TRAVEL_MS 2500 //door closing time
-#define PASSAGE_WAIT_TIMEOUT_MS 10000U // waiting for user passage
+// The FSM owns the card permission, motor, display, alarm and door timing.
+// The LDR module only reports stable passage events to this file.
+
+#define ALERT_DURATION_MS 10000       // Tailgating alarm time.
+#define BLINK_INTERVAL_MS 200         // Warning light interval.
+#define INVALID_CARD_DURATION_MS 2000 // Invalid-card warning time.
+#define CLOSING_TRAVEL_MS 2500        // Estimated closing travel time.
+#define PASSAGE_WAIT_TIMEOUT_MS 10000U
 #define DOOR_CLEAR_HOLD_MS 1500U
 #define CLOSE_RECHECK_MS 100U
 #define ENTRY_ARBITRATION_MS 100U
 
+// One shared timer is used for different short FSM tasks.
 typedef enum {
 	NONE,
 	FSM_TIMEOUT,
@@ -21,6 +25,7 @@ typedef enum {
 	IDLE_REVERT
 } TimerPurpose_t;
 
+// One normal card provides one entry permission.
 typedef enum
 {
 	ENTRY_AUTH_NONE,
@@ -32,13 +37,19 @@ static char pressed_key = 0;
 
 static DoorState_t current_state;
 static CardType_t last_card_type = CARD_NONE;
+
+// Keep the last accepted direction until the door is fully closed.
 static Direction_t passage_direction = DIR_ENTRY;
 
-// the variable that record which state the admin menu was opened from
+// Remember whether the admin menu was opened from IDLE or UNLOCKED.
 static DoorState_t admin_return_state = IDLE;
 
 static EntryAuthState_t entry_auth_state = ENTRY_AUTH_NONE;
+
+// Exit may go first while an unused entry permission waits for the next cycle.
 static bool authorised_entry_queued = false;
+
+// Both sides are waiting at a closed door and neither direction owns it yet.
 static bool simultaneous_hold_active = false;
 
 static volatile uint32_t fsm_timer_ms = 0;
@@ -79,6 +90,7 @@ const char *fsm_state_name(DoorState_t state) {
 }
 
 static void enter_idle(void) {
+	// A fully closed cycle clears all old permissions and LDR sequences.
 	reset_fsm_timer();
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
@@ -110,8 +122,7 @@ static void leave_admin(void) {
 }
 
 static void enter_authorised(void) {
-	// A new authorization must start from the current physical sensor states,
-	// not from an incomplete unowned sequence that began before the card swipe.
+	// Start a fresh entry request without inheriting an old LDR sequence.
 	ldr_unlock_direction();
 	passage_direction = DIR_ENTRY;
 	entry_auth_state = ENTRY_AUTH_AVAILABLE;
@@ -125,6 +136,7 @@ static void enter_authorised(void) {
 
 static void begin_entry_arbitration(void)
 {
+	// Give a new exit request a short chance to claim priority.
 	passage_direction = DIR_ENTRY;
 	lcd_print("Checking doorway", "Exit has priority");
 	start_fsm_timer(ENTRY_ARBITRATION_MS, ENTRY_ARBITRATION);
@@ -132,6 +144,7 @@ static void begin_entry_arbitration(void)
 
 static void enter_simultaneous_hold(void)
 {
+	// Keep the closed door still until one side steps back.
 	reset_fsm_timer();
 	simultaneous_hold_active = true;
 	ldr_start_simultaneous_hold();
@@ -144,6 +157,7 @@ static void enter_passage(void) {
 
 static void start_authorised_entry_passage(void)
 {
+	// Entry now owns the door until this opening and closing cycle finishes.
 	reset_fsm_timer();
 	simultaneous_hold_active = false;
 	passage_direction = DIR_ENTRY;
@@ -155,6 +169,7 @@ static void start_authorised_entry_passage(void)
 
 static void enter_exit_passage(void)
 {
+	// Exit never needs a card.
 	simultaneous_hold_active = false;
 	passage_direction = DIR_EXIT;
 	entry_auth_state = ENTRY_AUTH_NONE;
@@ -167,6 +182,7 @@ static void enter_exit_passage(void)
 
 static void reopen_for_safety(Direction_t direction)
 {
+	// Reopen to the last safe side when closing is obstructed.
 	reset_fsm_timer();
 	passage_direction = direction;
 	ldr_lock_direction(direction);
@@ -179,10 +195,10 @@ static void start_exit_priority_passage(void)
 	reset_fsm_timer();
 	simultaneous_hold_active = false;
 
-	// Preserve an unused entry authorization so that the authorized entrant can pass after the exit.
+	// Save the unused entry permission until the exit cycle is fully closed.
 	authorised_entry_queued = (entry_auth_state == ENTRY_AUTH_AVAILABLE);
 
-	//Exit has priority because it does not require authorization and people inside must not be trapped.
+	// Exit goes first so a person inside is not trapped.
 	passage_direction = DIR_EXIT;
 	ldr_lock_direction(DIR_EXIT);
 	motor_open(DIR_EXIT);
@@ -196,7 +212,7 @@ static void start_exit_priority_passage(void)
 }
 
 static void enter_alert(void) {
-	//Keep monitoring the LDRs and keep the door open while the suspected tailgater is in transit.
+	// Keep the current direction open while the alarm is active.
 	ldr_lock_direction(passage_direction);
 	motor_open(passage_direction);
 
@@ -207,6 +223,7 @@ static void enter_alert(void) {
 }
 
 static void enter_closing(void) {
+	// The LDR safety check can interrupt this movement at any time.
 	lcd_print("Closing door", "");
 	led_off();
 	motor_close();
@@ -229,6 +246,7 @@ static void request_close(void)
 }
 
 static void enter_unlocked(void) {
+	// Schedule and admin modes hold the door open toward the entry side.
 	simultaneous_hold_active = false;
 	ldr_unlock_direction();
 	passage_direction = DIR_ENTRY;
@@ -264,6 +282,7 @@ void fsm_dispatch(Event_t event) {
 	switch (current_state) {
 
 	case IDLE:
+		// Door closed: accept cards, exits and schedule start events.
 		if (event == EVT_CARD_SCANNED) {
 			switch (last_card_type) {
 				case CARD_NORMAL:
@@ -329,6 +348,7 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case PASSAGE:
+		// One direction owns the open door. The opposite side cannot reverse it.
 		if ((event == EVT_ENTRY_CONFIRMED) && (passage_direction == DIR_ENTRY)) {
 			//The first confirmed entrant consumes the one available authorization.
 			if (entry_auth_state == ENTRY_AUTH_AVAILABLE) {
@@ -378,6 +398,7 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case ALERT:
+		// Keep the door open until the alarm ends or an admin card stops it.
 		if (event == EVT_CARD_SCANNED &&
 			last_card_type == CARD_ADMIN) {
 			buzzer_off();
@@ -392,6 +413,7 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case CLOSING:
+		// Any new person must stop closing and reopen the door safely.
 		if (event == EVT_TAILGATE_DETECTED) {
 			current_state = ALERT;
 			enter_alert();
@@ -430,6 +452,7 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case ADMIN:
+		// Keypad events are handled by the admin menu module.
 		if (event == EVT_ADMIN_EXIT) {
 			leave_admin();
 		}
@@ -457,6 +480,7 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case UNLOCKED:
+		// Schedule mode keeps the door open until the event ends.
 		if (event == EVT_SCHEDULE_END) {
 			request_close();
 		}
@@ -469,6 +493,7 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case AUTHORISED:
+		// A valid card is stored, but the door waits for a real LDR1 request.
 		if (event == EVT_BOTH_LDRS_BLOCKED) {
 			enter_simultaneous_hold();
 		}
@@ -501,6 +526,7 @@ void fsm_dispatch(Event_t event) {
 }
 
 void fsm_tick_1ms(void) {
+	// This function is called by the 1 ms hardware timer interrupt.
 	if (fsm_timer_ms > 0) {
 		fsm_timer_ms--;
 		if (fsm_timer_ms == 0) {
@@ -510,8 +536,7 @@ void fsm_tick_1ms(void) {
 }
 
 void fsm_poll(void) {
-	// Safety fallback: if both LDRs are blocked together, there may be no direction event.
-	// Reopen using the most recent passage direction.
+	// Safety fallback: reopen if closing starts while either LDR is blocked.
 	if ((current_state == CLOSING) && !ldr_path_is_clear()) {
 		current_state = PASSAGE;
 		reopen_for_safety(passage_direction);

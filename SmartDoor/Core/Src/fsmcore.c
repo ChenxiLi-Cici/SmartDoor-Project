@@ -300,6 +300,11 @@ void fsm_dispatch(Event_t event) {
 			// LDR sequence timing now controls the passage.
 			reset_fsm_timer();
 		}
+		else if ((event == EVT_ENTRY_REQUEST) && (passage_direction == DIR_EXIT)) {
+			// A reverse-entry candidate appeared behind a completed exit.
+			// Keep the EXIT opening and wait for LDR2 confirmation.
+			reset_fsm_timer();
+		}
 
 		else if ((event == EVT_EXIT_REQUEST) && (passage_direction == DIR_EXIT)) {
 			// The owner has started moving; the LDR sequence now controls
@@ -325,10 +330,9 @@ void fsm_dispatch(Event_t event) {
 			request_close();
 		}
 
-		else if ((event == EVT_TAILGATE_DETECTED) && (passage_direction == DIR_ENTRY)) {
-					passage_direction = DIR_ENTRY;
-					current_state = ALERT;
-					enter_alert();
+		else if (event == EVT_TAILGATE_DETECTED) {
+			current_state = ALERT;
+			enter_alert();
 		}
 		break;
 
@@ -347,13 +351,25 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case CLOSING:
-		if (event == EVT_BOTH_LDRS_BLOCKED) {
+		if (event == EVT_TAILGATE_DETECTED) {
+			current_state = ALERT;
+			enter_alert();
+		}
+		else if (event == EVT_BOTH_LDRS_BLOCKED) {
 			current_state = PASSAGE;
 			start_simultaneous_request();
 		}
 		else if (event == EVT_ENTRY_REQUEST) {
 			current_state = PASSAGE;
-			reopen_for_safety(DIR_ENTRY);
+
+			// During an EXIT guard, LDR1 is a reverse-entry candidate. Reopen
+			// to the existing EXIT position instead of traversing 180 degrees.
+			if (passage_direction == DIR_EXIT) {
+				reopen_for_safety(DIR_EXIT);
+			}
+			else {
+				reopen_for_safety(DIR_ENTRY);
+			}
 		}
 		else if (event == EVT_EXIT_REQUEST) {
 			current_state = PASSAGE;

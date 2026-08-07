@@ -36,6 +36,12 @@ typedef enum
 	LDR_SEQUENCE_EXIT_WAIT_LDR1_BLOCK,
 	LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR,
 
+	// Keep watching for an unauthorised L1 -> LDR2 entry while an EXIT-owned
+	// doorway is still open or closing.
+	LDR_SEQUENCE_EXIT_GUARD,
+	LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR,
+	LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK,
+
 	// Both two LDR blocked by people approaching from opposite slides.
 	LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR,
 
@@ -111,7 +117,11 @@ static bool ldr_sequence_matches_direction(Direction_t direction)
 
 	return (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR) ||
 		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR1_BLOCK) ||
-		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR);
+		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR) ||
+		   (sequence_state == LDR_SEQUENCE_EXIT_GUARD) ||
+		   (sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR) ||
+		   (sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK) ||
+		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_CLEAR);
 }
 
 // Re-synchronise a newly locked direction with the current stable LDR states.
@@ -139,6 +149,8 @@ static bool ldr_sequence_can_timeout(void)
 		   (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR2_BLOCK)||
 		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR)||
 		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR1_BLOCK)||
+		   (sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR)||
+		   (sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK)||
 		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK)||
 		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR)||
 		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_SECOND_LDR2_BLOCK);
@@ -607,10 +619,83 @@ Event_t ldr_poll(void)
 
 			// Both LDRs are cleared. User have already passage the door.
 			if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_CLEAR)) {
-				ldr_sequence_reset();
+				// Keep the EXIT owner active until the door is fully closed so
+				// a person entering behind the exiting user can still be detected.
+				sequence_state = LDR_SEQUENCE_EXIT_GUARD;
+				ldr_sequence_start_ms = 0;
 				event = EVT_PASSAGE_DONE;
 
 				printf("Exit passage complete\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_EXIT_GUARD:
+
+			// A new LDR2 request is another permitted exit. Give it priority
+			// when both sensors become blocked in the same polling cycle.
+			if (ldr2_just_block) {
+				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR;
+				ldr_sequence_start_ms = now;
+				event = EVT_EXIT_REQUEST;
+
+				printf("EXIT guard: another exit started\r\n");
+			}
+
+			// LDR1 starting after a completed exit is a reverse-entry
+			// candidate. Hold the door, but alert only if LDR2 is reached.
+			else if (ldr1_just_block) {
+				sequence_state = LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR;
+				ldr_sequence_start_ms = now;
+				event = EVT_ENTRY_REQUEST;
+
+				printf("Reverse tailgating candidate: LDR1 started\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR:
+
+			// If LDR2 is reached while LDR1 remains blocked, the direction is
+			// ambiguous. Preserve exit priority instead of raising a false alarm.
+			if (ldr2_just_block && (ldr1_state == LDR_BLOCK)) {
+				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR;
+				event = EVT_EXIT_REQUEST;
+
+				printf("Reverse candidate became simultaneous: EXIT priority\r\n");
+			}
+
+			// A fresh LDR2 edge in the same cycle that LDR1 is already clear
+			// confirms the unauthorised reverse entry.
+			else if (ldr2_just_block) {
+				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_CLEAR;
+				event = EVT_TAILGATE_DETECTED;
+
+				printf("Reverse tailgating confirmed: LDR2 reached\r\n");
+			}
+
+			else if (ldr1_just_clear) {
+				sequence_state = LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK;
+
+				printf("Reverse tailgating candidate: waiting for LDR2\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK:
+
+			if (ldr2_just_block) {
+				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_CLEAR;
+				event = EVT_TAILGATE_DETECTED;
+
+				printf("Reverse tailgating confirmed: LDR2 reached\r\n");
+			}
+
+			// Restart the candidate timing if the person reaches LDR1 again
+			// before continuing to LDR2.
+			else if (ldr1_just_block) {
+				sequence_state = LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR;
+				ldr_sequence_start_ms = now;
 			}
 
 			break;
@@ -690,7 +775,14 @@ Event_t ldr_poll(void)
 	{
 	    printf("LDR sequence timeout: passage cancelled\r\n");
 
-	    ldr_sequence_reset();
+	    if ((sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR) ||
+	        (sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK)) {
+	        sequence_state = LDR_SEQUENCE_EXIT_GUARD;
+	        ldr_sequence_start_ms = 0;
+	    }
+	    else {
+	        ldr_sequence_reset();
+	    }
 	    event = EVT_PASSAGE_CANCELLED;
 	}
 

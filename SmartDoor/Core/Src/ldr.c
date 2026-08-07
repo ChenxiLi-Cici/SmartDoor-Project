@@ -259,6 +259,11 @@ bool ldr_path_is_clear(void)
 	return (latest_ldr1_state == LDR_CLEAR) && (latest_ldr2_state == LDR_CLEAR);
 }
 
+bool ldr_entry_sensor_is_blocked(void)
+{
+	return latest_ldr1_state == LDR_BLOCK;
+}
+
 void ldr_lock_direction(Direction_t direction)
 {
 	direction_locked = true;

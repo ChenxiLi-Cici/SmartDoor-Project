@@ -25,6 +25,11 @@ bool ldr_read_raw(uint16_t *ldr1_value, uint16_t *ldr2_value);
 // The FSM uses this function before it allows the door to close.
 bool ldr_path_is_clear(void);
 
+// Return true when the latest stable state of the outside entry sensor is BLOCK.
+// The FSM uses this after card authorisation so a person already at LDR1 does
+// not need to step away and trigger a second edge before the door opens.
+bool ldr_entry_sensor_is_blocked(void);
+
 // Lock passage recognition to the direction currently owned by the FSM.
 // The opposite sensor is still monitored for closing safety, but it cannot
 // start a new passage or reverse the motor until the lock is released.

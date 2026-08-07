@@ -108,14 +108,23 @@ static void enter_authorised(void) {
 	authorised_entry_queued = false;
 	ldr_lock_direction(DIR_ENTRY);
 
-	lcd_print("Access granted", "Please enter");
+	lcd_print("Access granted", "Approach door");
 	led_signal_authorised();
-	motor_open(passage_direction);
 	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
 }
 
 static void enter_passage(void) {
 	lcd_print("Please pass", "");
+}
+
+static void start_authorised_entry_passage(void)
+{
+	reset_fsm_timer();
+	passage_direction = DIR_ENTRY;
+	ldr_lock_direction(DIR_ENTRY);
+	current_state = PASSAGE;
+	motor_open(DIR_ENTRY);
+	enter_passage();
 }
 
 static void enter_exit_passage(void)
@@ -235,8 +244,12 @@ void fsm_dispatch(Event_t event) {
 				case CARD_NORMAL:
 					current_state = AUTHORISED;
 					enter_authorised();
-					current_state = PASSAGE;
-					enter_passage();
+
+					// If the person was already standing at LDR1 when the card
+					// was read, the required entry request is already present.
+					if (ldr_entry_sensor_is_blocked()) {
+						start_authorised_entry_passage();
+					}
 					break;
 				case CARD_ADMIN:
 					admin_return_state = IDLE;
@@ -389,7 +402,19 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case AUTHORISED:
-		// AUTHORISED is only a short transition before PASSAGE.
+		if (event == EVT_ENTRY_REQUEST) {
+			start_authorised_entry_passage();
+		}
+		else if (event == EVT_ENTRY_CONFIRMED) {
+			// This can occur when LDR1 was already active as the card was read.
+			// Open the door and consume the one available authorisation.
+			start_authorised_entry_passage();
+			entry_auth_state = ENTRY_AUTH_USED;
+		}
+		else if (event == EVT_TIMEOUT) {
+			current_state = IDLE;
+			enter_idle();
+		}
 		break;
 
 	}

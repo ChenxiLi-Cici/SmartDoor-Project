@@ -9,6 +9,8 @@
 #define INVALID_CARD_DURATION_MS 2000//2s
 #define CLOSING_TRAVEL_MS 2500 //door closing time
 #define PASSAGE_WAIT_TIMEOUT_MS 10000U // waiting for user passage
+#define DOOR_CLEAR_HOLD_MS 1500U
+#define CLOSE_RECHECK_MS 100U
 
 typedef enum {
 	NONE,
@@ -190,14 +192,14 @@ static void enter_closing(void) {
 	start_fsm_timer(CLOSING_TRAVEL_MS, FSM_TIMEOUT);
 }
 
-// Start closing only when both LDRs are clear.
-// If the passage is blocked, wait one second before checking again.
+// Start closing only after both LDRs have remained continuously clear.
+// Any obstruction restarts the clear interval before this function succeeds.
 static void request_close(void)
 {
-	if (!ldr_path_is_clear()) {
+	if (!ldr_path_has_been_clear_for(DOOR_CLEAR_HOLD_MS)) {
 		current_state = PASSAGE;
-		lcd_print("Path blocked", "Waiting to close");
-		start_fsm_timer(1000U, FSM_TIMEOUT);
+		lcd_print("Safety check", "Waiting to close");
+		start_fsm_timer(CLOSE_RECHECK_MS, FSM_TIMEOUT);
 		return;
 	}
 

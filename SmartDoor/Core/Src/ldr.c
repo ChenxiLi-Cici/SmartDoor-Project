@@ -28,6 +28,8 @@ typedef enum
 	LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR,
 	LDR_SEQUENCE_ENTRY_WAIT_LDR2_BLOCK,
 	LDR_SEQUENCE_ENTRY_WAIT_LDR2_CLEAR,
+	LDR_SEQUENCE_ENTRY_OVERLAP_WAIT_LDR1_CLEAR,
+	LDR_SEQUENCE_ENTRY_AMBIGUOUS_WAIT_CLEAR,
 
 	// Exit: LDR2 BLOCK -> CLEAR, followed by LDR1 BLOCK -> CLEAR.
 	LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR,
@@ -60,6 +62,10 @@ static ldrState_t previous_ldr2_state = LDR_CLEAR;
 // The latest stable states are used by ldr_path_is_clear().
 static ldrState_t latest_ldr1_state = LDR_CLEAR;
 static ldrState_t latest_ldr2_state = LDR_CLEAR;
+
+// Store when both stable LDR states most recently became CLEAR. Closing is
+// allowed only after this clear interval has remained uninterrupted.
+static uint32_t path_clear_since_ms = 0;
 
 // A candidate state is a possible new state that is still being debounced.
 // It becomes stable only after it remains unchanged for LDR_DEBOUNCE_MS.
@@ -95,6 +101,8 @@ static bool ldr_sequence_matches_direction(Direction_t direction)
 		return (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR) ||
 			   (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR2_BLOCK) ||
 			   (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR2_CLEAR) ||
+			   (sequence_state == LDR_SEQUENCE_ENTRY_OVERLAP_WAIT_LDR1_CLEAR) ||
+			   (sequence_state == LDR_SEQUENCE_ENTRY_AMBIGUOUS_WAIT_CLEAR) ||
 			   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK) ||
 			   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR) ||
 			   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_SECOND_LDR2_BLOCK) ||
@@ -220,6 +228,7 @@ void ldr_init(void)
 
 	latest_ldr1_state = LDR_CLEAR;
 	latest_ldr2_state = LDR_CLEAR;
+	path_clear_since_ms = HAL_GetTick();
 
 	ldr1_candidate_state = LDR_CLEAR;
 	ldr2_candidate_state = LDR_CLEAR;
@@ -257,6 +266,15 @@ bool ldr_path_is_clear(void)
 {
 	// One blocked LDR is enough to keep the path unsafe.
 	return (latest_ldr1_state == LDR_CLEAR) && (latest_ldr2_state == LDR_CLEAR);
+}
+
+bool ldr_path_has_been_clear_for(uint32_t duration_ms)
+{
+	if (!ldr_path_is_clear()) {
+		return false;
+	}
+
+	return (HAL_GetTick() - path_clear_since_ms) >= duration_ms;
 }
 
 bool ldr_entry_sensor_is_blocked(void)
@@ -348,11 +366,23 @@ Event_t ldr_poll(void)
 			// During an owned passage, only the first sensor for the locked
 			// direction may start a sequence. The opposite side must wait.
 			if (direction_locked && (locked_direction == DIR_ENTRY) && ldr1_just_block) {
-				sequence_state = LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR;
 				ldr_sequence_start_ms = now;
-				event = EVT_ENTRY_REQUEST;
 
-				printf("Locked ENTRY sequence started\r\n");
+				// Preserve both edges when the sensors become blocked in the
+				// same polling cycle. One confirmed event opens the authorised
+				// entry and consumes its authorisation without losing LDR2.
+				if (ldr2_state == LDR_BLOCK) {
+					sequence_state = LDR_SEQUENCE_ENTRY_OVERLAP_WAIT_LDR1_CLEAR;
+					event = EVT_ENTRY_CONFIRMED;
+
+					printf("Locked ENTRY overlap started\r\n");
+				}
+				else {
+					sequence_state = LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR;
+					event = EVT_ENTRY_REQUEST;
+
+					printf("Locked ENTRY sequence started\r\n");
+				}
 			}
 			else if (direction_locked && (locked_direction == DIR_EXIT) && ldr2_just_block) {
 				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR;
@@ -398,7 +428,8 @@ Event_t ldr_poll(void)
 				if (direction_locked && (locked_direction == DIR_ENTRY)) {
 					// An authorised entry owns the doorway, so an overlapping
 					// second LDR is part of that passage, not a motor reversal.
-					sequence_state = LDR_SEQUENCE_ENTRY_WAIT_LDR2_CLEAR;
+					// Keep the overlap state until LDR1 clears before LDR2.
+					sequence_state = LDR_SEQUENCE_ENTRY_OVERLAP_WAIT_LDR1_CLEAR;
 					event = EVT_ENTRY_CONFIRMED;
 
 					printf("Locked direction confirmed: ENTRY\r\n");
@@ -433,6 +464,39 @@ Event_t ldr_poll(void)
 
 					printf("Entry sequence: waiting for LDR2 to block\r\n");
 				}
+			}
+
+			break;
+
+		case LDR_SEQUENCE_ENTRY_OVERLAP_WAIT_LDR1_CLEAR:
+
+			// A valid entry leaves the outside sensor before the inside
+			// sensor. Only this order may enter the normal completion state.
+			if (ldr1_just_clear && (ldr2_state == LDR_BLOCK)) {
+				sequence_state = LDR_SEQUENCE_ENTRY_WAIT_LDR2_CLEAR;
+
+				printf("ENTRY overlap: LDR1 cleared before LDR2\r\n");
+			}
+
+			// LDR2 clearing first is ambiguous and must not immediately
+			// complete the entry when LDR1 later becomes clear.
+			else if (ldr2_just_clear) {
+				sequence_state = LDR_SEQUENCE_ENTRY_AMBIGUOUS_WAIT_CLEAR;
+
+				printf("ENTRY overlap: reverse clear order detected\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_ENTRY_AMBIGUOUS_WAIT_CLEAR:
+
+			// End the ambiguous sequence only after both sensors are clear.
+			// The FSM still applies the continuous-clear closing delay.
+			if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_CLEAR)) {
+				ldr_sequence_reset();
+				event = EVT_PASSAGE_CANCELLED;
+
+				printf("Ambiguous ENTRY passage clear\r\n");
 			}
 
 			break;
@@ -628,6 +692,19 @@ Event_t ldr_poll(void)
 
 	    ldr_sequence_reset();
 	    event = EVT_PASSAGE_CANCELLED;
+	}
+
+	// Restart the continuous-clear interval whenever the path changes from
+	// blocked to clear. While either sensor is blocked, keep moving the start
+	// time forward so a later clear interval begins from the next poll.
+	if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_CLEAR)) {
+		if ((latest_ldr1_state == LDR_BLOCK) ||
+			(latest_ldr2_state == LDR_BLOCK)) {
+			path_clear_since_ms = now;
+		}
+	}
+	else {
+		path_clear_since_ms = now;
 	}
 
 	// Save the latest stable states for the FSM closing safety check.

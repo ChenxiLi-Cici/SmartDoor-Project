@@ -25,6 +25,10 @@ bool ldr_read_raw(uint16_t *ldr1_value, uint16_t *ldr2_value);
 // The FSM uses this function before it allows the door to close.
 bool ldr_path_is_clear(void);
 
+// Return true only when both LDRs have remained continuously CLEAR for the
+// requested duration. Any new obstruction restarts the clear interval.
+bool ldr_path_has_been_clear_for(uint32_t duration_ms);
+
 // Return true when the latest stable state of the outside entry sensor is BLOCK.
 // The FSM uses this after card authorisation so a person already at LDR1 does
 // not need to step away and trigger a second edge before the door opens.

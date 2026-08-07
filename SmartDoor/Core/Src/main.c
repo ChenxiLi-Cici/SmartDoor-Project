@@ -41,27 +41,24 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-/* PN532 的 7 位 I2C 地址为 0x24，HAL 需要 8 位格式，故左移一位得 0x48 */
-#define PN532_I2C_ADDRESS       (0x24 << 1)
 
-/* PN532 帧固定字段 */
-#define PN532_PREAMBLE          0x00
-#define PN532_STARTCODE1        0x00
-#define PN532_STARTCODE2        0xFF
-#define PN532_HOSTTOPN532       0xD4    /* 主机 -> PN532 方向标识 */
-#define PN532_PN532TOHOST       0xD5    /* PN532 -> 主机 方向标识 */
+#define PN532_I2C_ADDRESS (0x24 << 1)
 
-/* PN532 指令码 */
-#define PN532_CMD_SAMCONFIG     0x14
+#define PN532_PREAMBLE 0x00
+#define PN532_STARTCODE1 0x00
+#define PN532_STARTCODE2 0xFF
+#define PN532_HOSTTOPN532 0xD4    // Host -> PN532 direction identifier
+#define PN532_PN532TOHOST 0xD5    // PN532 -> Host orientation identifier
+
+#define PN532_CMD_SAMCONFIG 0x14
 #define PN532_CMD_INLISTPASSIVE 0x4A
 
-/* I2C 读操作时，PN532 返回的第一个字节为就绪状态字 */
-#define PN532_READY             0x01
+#define PN532_READY 0x01
 
-/* 通用超时与重试参数 */
-#define PN532_I2C_TIMEOUT       100     /* 单次 I2C 传输超时 (ms) */
-#define PN532_READY_RETRIES     30      /* 轮询就绪状态的最大次数 */
-#define PN532_READY_INTERVAL    10      /* 每次轮询之间的间隔 (ms) */
+//  timeout and Retry parameters
+#define PN532_I2C_TIMEOUT 100     // A single I2C transmission timeout
+#define PN532_READY_RETRIES 30      // The max num of polling times for the ready state
+#define PN532_READY_INTERVAL 10      // The interval between each polling
 
 /* USER CODE END PD */
 
@@ -99,7 +96,6 @@ static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
-/* PN532 底层驱动与接口函数实现 */
 void     PN532_Wakeup(void);
 uint8_t  PN532_SAMConfig(void);
 int      PN532_Get_UID(uint8_t *uid, uint8_t *uidLen);
@@ -115,9 +111,8 @@ static HAL_StatusTypeDef PN532_ReadResponse(uint8_t *buf, uint16_t len);
 /* USER CODE BEGIN 0 */
 
 #ifdef __GNUC__
-/**
-  * @brief Redirect printf to USART2 for the ST-Link serial port.
-  */
+
+// Redirect printf to USART2 for the ST-Link serial port.
 int _write(int file, char *ptr, int len)
 {
     // printf does not use file, but _write must keep this parameter.
@@ -127,9 +122,7 @@ int _write(int file, char *ptr, int len)
 }
 #endif
 
-/**
-  * @brief  发送前导字节physically唤醒 PN532
-  */
+// Send the leading byte physically to wake up PN532
 void PN532_Wakeup(void)
 {
     uint8_t wake[] = { 0x55, 0x55, 0x00, 0x00, 0x00 };
@@ -137,9 +130,7 @@ void PN532_Wakeup(void)
     HAL_Delay(10);
 }
 
-/**
-  * @brief  计算数据校验和 DCS
-  */
+// Calculate DCS
 static uint8_t PN532_ComputeDataChecksum(const uint8_t *data, uint8_t len)
 {
     uint8_t sum = 0;
@@ -150,9 +141,7 @@ static uint8_t PN532_ComputeDataChecksum(const uint8_t *data, uint8_t len)
     return (uint8_t)(~sum + 1);
 }
 
-/**
-  * @brief  按 PN532 普通信息帧格式打包并发送一条指令
-  */
+// Send an instruction in the PN532 ordinary information frame format
 static HAL_StatusTypeDef PN532_SendCommand(const uint8_t *cmd, uint8_t cmdLen)
 {
     uint8_t frame[32];
@@ -183,9 +172,7 @@ static HAL_StatusTypeDef PN532_SendCommand(const uint8_t *cmd, uint8_t cmdLen)
     return HAL_I2C_Master_Transmit(&hi2c1, PN532_I2C_ADDRESS, frame, idx, PN532_I2C_TIMEOUT);
 }
 
-/**
-  * @brief  轮询 PN532 的就绪状态字
-  */
+// Poll the ready status word of PN532
 static HAL_StatusTypeDef PN532_WaitReady(uint32_t retries)
 {
     uint8_t ready = 0;
@@ -203,18 +190,13 @@ static HAL_StatusTypeDef PN532_WaitReady(uint32_t retries)
     return HAL_TIMEOUT;
 }
 
-/**
-  * @brief  读取一帧响应（含首位就绪状态字）
-  */
+// Read response (including ready state)
 static HAL_StatusTypeDef PN532_ReadResponse(uint8_t *buf, uint16_t len)
 {
     return HAL_I2C_Master_Receive(&hi2c1, PN532_I2C_ADDRESS, buf, len, PN532_I2C_TIMEOUT);
 }
 
-/**
-  * @brief  配置 PN532 的 SAM 为普通读卡模式
-  * @retval 1: 配置成功, 0: 配置失败
-  */
+// Configure the SAM of PN532 to the normal card reading mode
 uint8_t PN532_SAMConfig(void)
 {
     uint8_t cmd[] = { PN532_CMD_SAMCONFIG, 0x01, 0x14, 0x01 };
@@ -243,12 +225,7 @@ uint8_t PN532_SAMConfig(void)
     return 1;
 }
 
-/**
-  * @brief  非阻塞寻卡获取目标 UID 的核心函数接口（供业务或业务轮询调用）
-  * @param  uid    用于存储输出 UID 的缓冲区
-  * @param  uidLen 用于存储输出 UID 实际长度的变量指针
-  * @retval 1 表示成功读到卡片且获取了 UID，0 表示本次未检测到卡片
-  */
+// Non-blocking card search to obtain the target UID
 int PN532_Get_UID(uint8_t *uid, uint8_t *uidLen)
 {
     uint8_t cmd[] = { PN532_CMD_INLISTPASSIVE, 0x01, 0x00 };
@@ -372,6 +349,13 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  // Refresh the LDR state before timers make arbitration or closing decisions.
+	  Event_t ldr_event = ldr_poll();
+
+	  if (ldr_event != EVT_NONE) {
+		  fsm_dispatch(ldr_event);
+	  }
+
 	  // Constantly refresh the non-blocking timers
 	  fsm_poll();
 
@@ -419,12 +403,6 @@ int main(void)
 	  if (key != 0) {
 		  fsm_set_key(key);
 		  fsm_dispatch(EVT_KEYPAD_KEY);
-	  }
-
-	  Event_t ldr_event = ldr_poll();
-
-	  if (ldr_event != EVT_NONE) {
-		  fsm_dispatch(ldr_event);
 	  }
 
 	  /* Even in the unlock state,
@@ -699,8 +677,8 @@ static void MX_RTC_Init(void)
   */
   hrtc.Instance = RTC;
   hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  hrtc.Init.AsynchPrediv = 124;
-  hrtc.Init.SynchPrediv = 319;
+  hrtc.Init.AsynchPrediv = 125;
+  hrtc.Init.SynchPrediv = 304;
   hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
   hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
   hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;

@@ -110,13 +110,23 @@ static bool entry_to_time(uint8_t *hour, uint8_t *minute) {
     return true;
 }
 
+// Return the number of days in the given month
+static uint8_t days_in_month(uint8_t month) {
+    static const uint8_t DAYS_IN_MONTH[12] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    return DAYS_IN_MONTH[month - 1];
+}
+
+
 // Turn the 4 digits into day/month
 static bool entry_to_date(uint8_t *day, uint8_t *month) {
     uint8_t d = ascii_to_decimal(entry[0], entry[1]);
     uint8_t m = ascii_to_decimal(entry[2], entry[3]);
 
     // Return false if the input is invalid
-    if (d < 1 || d > 31 || m < 1 || m > 12) {
+    if (m < 1 || m > 12) {
+        return false;
+    }
+    if (d < 1 || d > days_in_month(m)) {
         return false;
     }
 

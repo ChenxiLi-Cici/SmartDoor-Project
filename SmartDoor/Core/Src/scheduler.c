@@ -80,6 +80,16 @@ void scheduler_disable(void)
     printf("Scheduler: event cancelled\r\n");
 }
 
+// force close the opening scheduler
+void scheduler_force_close(void)
+{
+    if (schedule_holds_door_open) {
+        event_configured = false;
+        schedule_holds_door_open = false;
+        printf("Scheduler: event cancelled\r\n");
+    }
+}
+
 // Read back the event so the admin menu can show what is already scheduled
 bool scheduler_get_event(uint8_t *month, uint8_t *day,
                          uint8_t *hour, uint8_t *minute,

@@ -4,31 +4,36 @@
 #include "main.h"
 #include <stdbool.h>
 
-/* Configure a unlock window using real time
- * e.g. scheduler_set_window(9, 0, 9, 30) unlocks the door every day
- * from 09:00 to 09:30
- */
-void scheduler_set_window(uint8_t start_hour, uint8_t start_min,
-                           uint8_t end_hour, uint8_t end_min);
+/* Set a unlock event: the door stays unlocked for
+ * `duration_min` minutes starting at `hour:minute` on `month/day`.
+ * Assumption: Events are limited to a single day, so start + duration must not run past
+ * midnight. The year is not considered. */
+void scheduler_set_event(uint8_t month, uint8_t day,
+                         uint8_t hour, uint8_t minute,
+                         uint16_t duration_min);
+
+// Cancel the configured event.
+void scheduler_disable(void);
+
+// Read back the configured event so that the admin menu can show what is already scheduled.
+bool scheduler_get_event(uint8_t *month, uint8_t *day,
+                         uint8_t *hour, uint8_t *minute,
+                         uint16_t *duration_min);
 
 // Set the RTC's current time, in 24-hour HH:MM.
 void scheduler_set_clock(uint8_t hour, uint8_t minute);
 
-// Cancel the configured window.
-void scheduler_disable(void);
+// Set the RTC's current date.
+void scheduler_set_date(uint8_t month, uint8_t day);
 
-/* Read the configured window so that the admin_menu can pre-fill the LCD.
- * Returns false if no window has been configured yet. */
-bool scheduler_get_window(uint8_t *start_hour, uint8_t *start_min,
-                          uint8_t *end_hour, uint8_t *end_min);
-
-// Read the current wall-clock time from the RTC.
+// Read the current clock time from the RTC.
 void scheduler_get_time(uint8_t *hour, uint8_t *minute);
 
+// Read the current date from the RTC.
+void scheduler_get_date(uint8_t *month, uint8_t *day);
 
 // Scheduler Event Interface
 bool scheduler_check_start(void);
 bool scheduler_check_end(void);
-
 
 #endif /* SCHEDULER_H */

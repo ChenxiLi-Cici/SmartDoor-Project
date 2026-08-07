@@ -4,14 +4,16 @@
 // Declared by CubeMX in main.c
 extern RTC_HandleTypeDef hrtc;
 
-/* Window boundaries
- * In order to make the comparison easier,
- * the time is stored as the number of minutes starting from 0:00. */
-static uint16_t window_start_min = 0;
-static uint16_t window_end_min   = 0;
+static uint8_t  event_month = 0;
+static uint8_t  event_day = 0;
 
-// Has the administrator set up a unlock window
-static bool window_configured = false;
+// Start time, in minutes since midnight
+static uint16_t event_start_min = 0;
+// The duration of the scheduled event, in minutes
+static uint16_t event_duration_min = 0;
+
+// Has the event been configured
+static bool event_configured = false;
 
 // True while the scheduler is currently holding the door open
 static bool schedule_holds_door_open = false;
@@ -21,140 +23,173 @@ static uint16_t minutes_of_day(uint8_t hour, uint8_t minute) {
     return (uint16_t)hour * 60 + minute;
 }
 
-// Reads the RTC and returns it as minutes since midnight.
-static uint16_t current_minute_of_day(void) {
-    uint8_t hour   = 0;
-    uint8_t minute = 0;
+// read the current clock time
+static void read_now(uint8_t *month, uint8_t *day, uint16_t *minute_of_day)
+{
+    RTC_TimeTypeDef sTime = {0};
+    RTC_DateTypeDef sDate = {0};
 
-    scheduler_get_time(&hour, &minute);
+    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 
-    return minutes_of_day(hour, minute);
+    *month         = sDate.Month;
+    *day           = sDate.Date;
+    *minute_of_day = minutes_of_day(sTime.Hours, sTime.Minutes);
 }
 
-// Is the current time inside [window_start_min, window_end_min)
-static bool is_in_window(uint16_t now) {
-    if (window_start_min <= window_end_min) {
-        return now >= window_start_min && now < window_end_min;
-    } else {
-    	// If the window crosses midnight (start > end)
-        return now >= window_start_min || now < window_end_min;
+/* Is the event running right now?
+ * We assumed that events never cross midnight */
+static bool event_is_running(void)
+{
+    uint8_t  month = 0;
+    uint8_t  day = 0;
+    uint16_t now_min = 0;
+
+    read_now(&month, &day, &now_min);
+
+    // The date must match
+    if (month != event_month || day != event_day) {
+        return false;
     }
+
+    // the time must fall inside [start, start + duration).
+    return (now_min >= event_start_min) &&
+           (now_min <  event_start_min + event_duration_min);
 }
 
-// Configure a new unlock window
-void scheduler_set_window(uint8_t start_hour, uint8_t start_min,
-                           uint8_t end_hour, uint8_t end_min) {
-    window_start_min   = minutes_of_day(start_hour, start_min);
-    window_end_min     = minutes_of_day(end_hour, end_min);
-    window_configured  = true;
+// Configure a new unlock event
+void scheduler_set_event(uint8_t month, uint8_t day,
+                         uint8_t hour, uint8_t minute,
+                         uint16_t duration_min)
+{
+    event_month        = month;
+    event_day          = day;
+    event_start_min    = minutes_of_day(hour, minute);
+    event_duration_min = duration_min;
+    event_configured   = true;
 
-    printf("Scheduler: window set %02u:%02u - %02u:%02u\r\n",
-           start_hour, start_min, end_hour, end_min);
+    printf("Scheduler: event set %02u/%02u %02u:%02u for %u min\r\n",
+           day, month, hour, minute, duration_min);
 }
 
+// Cancel the configured event
+void scheduler_disable(void)
+{
+    event_configured = false;
+    printf("Scheduler: event cancelled\r\n");
+}
+
+// Read back the event so the admin menu can show what is already scheduled
+bool scheduler_get_event(uint8_t *month, uint8_t *day,
+                         uint8_t *hour, uint8_t *minute,
+                         uint16_t *duration_min)
+{
+    *month        = event_month;
+    *day          = event_day;
+    *hour         = (uint8_t)(event_start_min / 60);
+    *minute       = (uint8_t)(event_start_min % 60);
+    *duration_min = event_duration_min;
+
+    return event_configured;
+}
 
 // Set the RTC's current time, in 24-hour HH:MM.
-void scheduler_set_clock(uint8_t hour, uint8_t minute) {
+void scheduler_set_clock(uint8_t hour, uint8_t minute)
+{
     RTC_TimeTypeDef sTime = {0};
 
-    sTime.Hours          = hour;
-    sTime.Minutes        = minute;
-    sTime.Seconds        = 0;
+    sTime.Hours   = hour;
+    sTime.Minutes = minute;
+    sTime.Seconds = 0;
 
     if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) {
-		printf("Scheduler: failed to set clock\r\n");
-		return;
-	}
+        printf("Scheduler: failed to set clock\r\n");
+        return;
+    }
 
     printf("Scheduler: clock set to %02u:%02u\r\n", hour, minute);
 }
 
+// Set the RTC's current date.
+void scheduler_set_date(uint8_t month, uint8_t day)
+{
+    RTC_DateTypeDef sDate = {0};
 
+    sDate.Month   = month;
+    sDate.Date    = day;
+    sDate.Year    = 0;
+    // Not used by the schedule, but HAL needs a valid value
+    sDate.WeekDay = RTC_WEEKDAY_MONDAY;
 
-// called when the administrator wants to cancel the scheduled unlock
-void scheduler_disable(void) {
-    window_configured  = false;
-    printf("Scheduler: window disabled\r\n");
-}
+    if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) {
+        printf("Scheduler: failed to set date\r\n");
+        return;
+    }
 
-
-/* Read the configured window so that the admin_menu can pre-fill the LCD.
- * Returns false if no window has been configured yet. */
-bool scheduler_get_window(uint8_t *start_hour, uint8_t *start_min,
-                          uint8_t *end_hour, uint8_t *end_min) {
-    *start_hour = (uint8_t)(window_start_min / 60);
-    *start_min  = (uint8_t)(window_start_min % 60);
-    *end_hour   = (uint8_t)(window_end_min / 60);
-    *end_min    = (uint8_t)(window_end_min % 60);
-
-    return window_configured;
+    printf("Scheduler: date set to %02u/%02u\r\n", day, month);
 }
 
 // Read the current clock time from the RTC.
-void scheduler_get_time(uint8_t *hour, uint8_t *minute) {
-    // Declare an empty structure to store time (hours, minutes, seconds)
-	RTC_TimeTypeDef sTime = {0};
+void scheduler_get_time(uint8_t *hour, uint8_t *minute)
+{
+    uint8_t  month = 0;
+    uint8_t  day = 0;
+    uint16_t now_min = 0;
 
-	/* Declare an empty structure to store date.
-	 Even though we don't care about the date, HAL requires calling
-	 GetDate to unlock the shadow register after GetTime -- otherwise
-	 the shadow register (which latch both time and date) won't
-	 update. So we must call GetDate, and therefore need a structure
-	 ready to receive the date.
-	*/
-	RTC_DateTypeDef sDate = {0};
+    read_now(&month, &day, &now_min);
 
-	// Get the time
-	/* RTC_FORMAT_BIN: Convert time data into a regular binary integer,
-	   so that it can be directly used for + - * /
-	*/
-	HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-
-	HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
-
-    *hour   = sTime.Hours;
-    *minute = sTime.Minutes;
+    *hour   = (uint8_t)(now_min / 60);
+    *minute = (uint8_t)(now_min % 60);
 }
 
+// Read the current date from the RTC.
+void scheduler_get_date(uint8_t *month, uint8_t *day)
+{
+    uint16_t now_min = 0;
 
-// return 1 exactly when the current time crosses into the configured window.
-bool scheduler_check_start(void) {
+    read_now(month, day, &now_min);
+}
 
+// return 1 exactly when the event starts
+bool scheduler_check_start(void)
+{
     // Nothing configured
-    if (!window_configured) {
-		schedule_holds_door_open = false;
-		return false;
-	}
+    if (!event_configured) {
+        schedule_holds_door_open = false;
+        return false;
+    }
 
-    // be out of the window range
-	if (!is_in_window(current_minute_of_day())) {
-		schedule_holds_door_open = false;
-		return false;
-	}
+    /* Not the right date, or outside the time range. We are only polled from
+     * IDLE, i.e. the door is closed, so the flag can safely be re-armed. */
+    if (!event_is_running()) {
+        schedule_holds_door_open = false;
+        return false;
+    }
 
-	/* If the door has already been opened by the scheduler,
-	there is no need to trigger the start signal again */
-	if (schedule_holds_door_open) {
-		return false;
-	}
+    /* Already opened by the scheduler, no need to signal the start again */
+    if (schedule_holds_door_open) {
+        return false;
+    }
 
-	schedule_holds_door_open = true;
-	printf("Scheduler: window START\r\n");
-	return true;
+    schedule_holds_door_open = true;
+    printf("Scheduler: event START\r\n");
+    return true;
 }
 
-// return 1 exactly when the current time crosses out of the configured window.
-bool scheduler_check_end(void) {
-	// It is not unlocked yet
+// return 1 exactly when the event finishes
+bool scheduler_check_end(void)
+{
+    // The schedule is not the one holding the door open
     if (!schedule_holds_door_open) {
         return false;
     }
 
-    // The window was cancelled, or it's no longer within the window range now.
-    if (!window_configured || !is_in_window(current_minute_of_day())) {
+    // The event was cancelled, or its time is up
+    if (!event_configured || !event_is_running()) {
         schedule_holds_door_open = false;
-        printf("Scheduler: window END\r\n");
+        /* It has now happened, so clear it. */
+        event_configured = false;
+        printf("Scheduler: event END\r\n");
         return true;
     }
     return false;

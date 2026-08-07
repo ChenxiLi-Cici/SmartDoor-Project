@@ -394,15 +394,20 @@ int main(void)
 		  }
 	  }
 
-	  // Keep the clock on the idle screen up to date. Only redraw when the minute changes
+	  // Keep the clock on the idle/unlocked screen up to date. Only redraw when the minute changes
 	  static uint8_t last_shown_minute = 0xFF;
-	  if (door_state == IDLE) {
+	  if (door_state == IDLE || door_state == UNLOCKED) {
 		  uint8_t h, m;
 		  scheduler_get_time(&h, &m);
 		  if (m != last_shown_minute) {
 			  char idle_line2[20];
-			  snprintf(idle_line2, sizeof(idle_line2), "Scan card  %02u:%02u", h, m);
-			  lcd_print("Smart Door", idle_line2);
+			  if (door_state == IDLE) {
+				  snprintf(idle_line2, sizeof(idle_line2), "Scan card  %02u:%02u", h, m);
+				  lcd_print("Smart Door", idle_line2);
+			  } else {
+				  snprintf(idle_line2, sizeof(idle_line2), "Door open  %02u:%02u", h, m);
+				  lcd_print("Event mode", idle_line2);
+			  }
 			  last_shown_minute = m;
 		  }
 	  } else {

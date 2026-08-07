@@ -11,10 +11,12 @@
 #define PASSAGE_WAIT_TIMEOUT_MS 10000U // waiting for user passage
 #define DOOR_CLEAR_HOLD_MS 1500U
 #define CLOSE_RECHECK_MS 100U
+#define ENTRY_ARBITRATION_MS 100U
 
 typedef enum {
 	NONE,
 	FSM_TIMEOUT,
+	ENTRY_ARBITRATION,
 	IDLE_REVERT
 } TimerPurpose_t;
 
@@ -105,14 +107,23 @@ static void leave_admin(void) {
 }
 
 static void enter_authorised(void) {
+	// A new authorization must start from the current physical sensor states,
+	// not from an incomplete unowned sequence that began before the card swipe.
+	ldr_unlock_direction();
 	passage_direction = DIR_ENTRY;
 	entry_auth_state = ENTRY_AUTH_AVAILABLE;
 	authorised_entry_queued = false;
-	ldr_lock_direction(DIR_ENTRY);
 
 	lcd_print("Access granted", "Approach door");
 	led_signal_authorised();
 	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
+}
+
+static void begin_entry_arbitration(void)
+{
+	passage_direction = DIR_ENTRY;
+	lcd_print("Checking doorway", "Exit has priority");
+	start_fsm_timer(ENTRY_ARBITRATION_MS, ENTRY_ARBITRATION);
 }
 
 static void enter_passage(void) {
@@ -160,18 +171,13 @@ static void start_simultaneous_request(void)
 	passage_direction = DIR_EXIT;
 	ldr_lock_direction(DIR_EXIT);
 	motor_open(DIR_EXIT);
-}
 
-static void start_queued_entry(void)
-{
-	authorised_entry_queued = false;
-	passage_direction = DIR_ENTRY;
-	ldr_lock_direction(DIR_ENTRY);
-
-	// The simultaneous sequence has already reset after both LDRs became clear.
-	// Reopen the door for the queued authorized entrant.
-	motor_open(DIR_ENTRY);
-	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
+	if (authorised_entry_queued) {
+		lcd_print("Exit priority", "Entry please wait");
+	}
+	else {
+		lcd_print("Exit", "Door opening");
+	}
 }
 
 static void enter_alert(void) {
@@ -249,9 +255,9 @@ void fsm_dispatch(Event_t event) {
 					enter_authorised();
 
 					// If the person was already standing at LDR1 when the card
-					// was read, the required entry request is already present.
+					// was read, begin the same short exit-priority arbitration.
 					if (ldr_entry_sensor_is_blocked()) {
-						start_authorised_entry_passage();
+						begin_entry_arbitration();
 					}
 					break;
 				case CARD_ADMIN:
@@ -319,12 +325,7 @@ void fsm_dispatch(Event_t event) {
 		}
 
 		else if ((event == EVT_PASSAGE_DONE) || (event == EVT_PASSAGE_CANCELLED)) {
-			if (authorised_entry_queued && (entry_auth_state == ENTRY_AUTH_AVAILABLE)) {
-				start_queued_entry();
-			}
-			else {
-				request_close();
-			}
+			request_close();
 		}
 
 		else if (event == EVT_TIMEOUT) {
@@ -377,8 +378,15 @@ void fsm_dispatch(Event_t event) {
 			reopen_for_safety(DIR_EXIT);
 		}
 		else if (event == EVT_TIMEOUT) {
-			current_state = IDLE;
-			enter_idle();
+			if (authorised_entry_queued &&
+				(entry_auth_state == ENTRY_AUTH_AVAILABLE)) {
+				current_state = AUTHORISED;
+				enter_authorised();
+			}
+			else {
+				current_state = IDLE;
+				enter_idle();
+			}
 		}
 		break;
 
@@ -422,13 +430,15 @@ void fsm_dispatch(Event_t event) {
 
 	case AUTHORISED:
 		if (event == EVT_ENTRY_REQUEST) {
-			start_authorised_entry_passage();
+			begin_entry_arbitration();
 		}
-		else if (event == EVT_ENTRY_CONFIRMED) {
-			// This can occur when LDR1 was already active as the card was read.
-			// Open the door and consume the one available authorisation.
-			start_authorised_entry_passage();
-			entry_auth_state = ENTRY_AUTH_USED;
+		else if ((event == EVT_EXIT_REQUEST) ||
+				 (event == EVT_BOTH_LDRS_BLOCKED) ||
+				 (event == EVT_ENTRY_CONFIRMED)) {
+			// Until ENTRY wins the arbitration and opens the door, an EXIT
+			// request owns the doorway and the unused entry authorization waits.
+			current_state = PASSAGE;
+			start_simultaneous_request();
 		}
 		else if (event == EVT_TIMEOUT) {
 			current_state = IDLE;
@@ -463,6 +473,17 @@ void fsm_poll(void) {
 		fsm_timer_purpose = NONE;
 		if (purpose == FSM_TIMEOUT) {
 			fsm_dispatch(EVT_TIMEOUT);
+		} else if ((purpose == ENTRY_ARBITRATION) &&
+				   (current_state == AUTHORISED)) {
+			if (ldr_entry_sensor_is_blocked()) {
+				start_authorised_entry_passage();
+			}
+			else {
+				// The entrant stepped away before winning ownership. Clear the
+				// incomplete LDR sequence and keep the authorization available.
+				ldr_unlock_direction();
+				enter_authorised();
+			}
 		} else if ((purpose == IDLE_REVERT) && (current_state == IDLE)) {
 			enter_idle();
 		}

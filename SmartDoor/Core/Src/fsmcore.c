@@ -209,6 +209,7 @@ static void request_close(void)
 
 static void enter_unlocked(void) {
 	ldr_unlock_direction();
+	passage_direction = DIR_ENTRY;
 	lcd_print("Event mode", "Door open");
 	motor_open(DIR_ENTRY);
 }

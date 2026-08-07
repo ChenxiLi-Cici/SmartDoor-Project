@@ -32,6 +32,9 @@ void scheduler_get_time(uint8_t *hour, uint8_t *minute);
 // Read the current date from the RTC.
 void scheduler_get_date(uint8_t *month, uint8_t *day);
 
+// force close the opening scheduler
+void scheduler_force_close(void);
+
 // Scheduler Event Interface
 bool scheduler_check_start(void);
 bool scheduler_check_end(void);

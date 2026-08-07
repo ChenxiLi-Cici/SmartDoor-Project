@@ -2,6 +2,7 @@
 #include "output.h"
 #include "admin_menu.h" 
 #include "ldr.h"
+#include "scheduler.h"
 #include <stdbool.h>
 
 #define ALERT_DURATION_MS 10000 //alarm 10s
@@ -442,6 +443,7 @@ void fsm_dispatch(Event_t event) {
 		// The administrator selected "Restore Normal".
 		else if (event == EVT_ADMIN_SET_NORMAL) {
 			admin_menu_exit();
+			scheduler_force_close();
 			request_close();
 		}
 		// handle key

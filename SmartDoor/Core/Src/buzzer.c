@@ -6,7 +6,7 @@ extern TIM_HandleTypeDef htim1;
 /* counter: 1 MHz, ARR: 399, PWM period: 400 ticks
  * 1 MHz / 400 = 2.5 kHz
  * 20 =  5% duty */
-#define BUZZER_VOLUME_CCR 20U
+#define BUZZER_VOLUME_CCR 2U
 
 // How many more ms does the buzzer need to sound
 static volatile uint32_t buzzer_timeout = 0U;

@@ -16,6 +16,10 @@
 // A new measured state must remain stable for 50 ms.
 #define LDR_DEBOUNCE_MS 50U
 
+// Confirm that only one side remains after a simultaneous request before
+// assigning a direction. This also catches near-simultaneous stable edges.
+#define LDR_SIMULTANEOUS_CONFIRM_MS 100U
+
 // This state machine records the order in which the two LDRs are blocked.
 // LDR1 followed by LDR2 represents entry.
 // LDR2 followed by LDR1 represents exit.
@@ -32,6 +36,7 @@ typedef enum
 	LDR_SEQUENCE_ENTRY_AMBIGUOUS_WAIT_CLEAR,
 
 	// Exit: LDR2 BLOCK -> CLEAR, followed by LDR1 BLOCK -> CLEAR.
+	LDR_SEQUENCE_EXIT_ARBITRATION,
 	LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR,
 	LDR_SEQUENCE_EXIT_WAIT_LDR1_BLOCK,
 	LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR,
@@ -42,8 +47,10 @@ typedef enum
 	LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR,
 	LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK,
 
-	// Both two LDR blocked by people approaching from opposite slides.
+	// Closed-door conflict: both sides wait until one side steps back.
 	LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR,
+	LDR_SEQUENCE_SIMULTANEOUS_LDR1_CLEAR_CONFIRM,
+	LDR_SEQUENCE_SIMULTANEOUS_LDR2_CLEAR_CONFIRM,
 
 	// A second LDR1 trigger is only a tailgating candidate. Confirm it only
 	// after the first person has cleared LDR2 and LDR2 is blocked again.
@@ -295,6 +302,31 @@ bool ldr_entry_sensor_is_blocked(void)
 	return latest_ldr1_state == LDR_BLOCK;
 }
 
+bool ldr_exit_sensor_is_blocked(void)
+{
+	return latest_ldr2_state == LDR_BLOCK;
+}
+
+bool ldr_both_sensors_are_blocked(void)
+{
+	return (latest_ldr1_state == LDR_BLOCK) &&
+		   (latest_ldr2_state == LDR_BLOCK);
+}
+
+void ldr_start_simultaneous_hold(void)
+{
+	direction_locked = false;
+	sequence_state = LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR;
+	ldr_sequence_start_ms = 0;
+}
+
+void ldr_start_exit_arbitration(void)
+{
+	direction_locked = false;
+	sequence_state = LDR_SEQUENCE_EXIT_ARBITRATION;
+	ldr_sequence_start_ms = HAL_GetTick();
+}
+
 void ldr_lock_direction(Direction_t direction)
 {
 	direction_locked = true;
@@ -403,8 +435,8 @@ Event_t ldr_poll(void)
 				printf("Locked EXIT sequence started\r\n");
 			}
 
-			// With no owner, two new requests at the same time are resolved by
-			// the FSM (exit has priority).
+			// With no owner, two new requests hold the closed door until one
+			// side steps back. The FSM displays the EXIT-priority instruction.
 			else if (!direction_locked && ldr1_just_block && ldr2_just_block) {
 				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR;
 				event = EVT_BOTH_LDRS_BLOCKED;
@@ -423,11 +455,48 @@ Event_t ldr_poll(void)
 
 			// Inside building's LDR blocked, may indicate for exit.
 			else if (!direction_locked && ldr2_just_block) {
+				// Keep the door closed briefly so a near-simultaneous LDR1 edge
+				// can be recognised before EXIT receives ownership.
+				sequence_state = LDR_SEQUENCE_EXIT_ARBITRATION;
+				ldr_sequence_start_ms = now;
+
+				printf("Exit request arbitration started\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_EXIT_ARBITRATION:
+
+			// LDR1 joined the request before EXIT ownership was granted.
+			if ((ldr1_state == LDR_BLOCK) && (ldr2_state == LDR_BLOCK)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR;
+				ldr_sequence_start_ms = 0;
+				event = EVT_BOTH_LDRS_BLOCKED;
+
+				printf("Near-simultaneous request: holding door closed\r\n");
+			}
+
+			// LDR2 withdrew while LDR1 appeared inside the arbitration window.
+			else if ((ldr1_state == LDR_BLOCK) && (ldr2_state == LDR_CLEAR)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_LDR2_CLEAR_CONFIRM;
+				ldr_sequence_start_ms = now;
+				event = EVT_BOTH_LDRS_BLOCKED;
+
+				printf("Simultaneous request: EXIT side stepped back\r\n");
+			}
+
+			else if (ldr2_state == LDR_CLEAR) {
+				ldr_sequence_reset();
+
+				printf("Exit request withdrawn during arbitration\r\n");
+			}
+
+			else if ((now - ldr_sequence_start_ms) >= LDR_SIMULTANEOUS_CONFIRM_MS) {
 				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR;
 				ldr_sequence_start_ms = now;
 				event = EVT_EXIT_REQUEST;
 
-				printf("Exit sequence started: waiting for LDR2 to clear\r\n");
+				printf("Exit request confirmed after arbitration\r\n");
 			}
 
 			break;
@@ -519,16 +588,24 @@ Event_t ldr_poll(void)
 			if (ldr1_just_block) {
 				ldr_sequence_start_ms = now;
 
-				if (ldr2_state == LDR_BLOCK) {
-					// The first person reached LDR2 in the same polling cycle.
-					sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR;
-					event = EVT_ENTRY_CONFIRMED;
+				if (direction_locked && (locked_direction == DIR_ENTRY)) {
+					if (ldr2_state == LDR_BLOCK) {
+						// The first person reached LDR2 in the same polling cycle.
+						sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR;
+						event = EVT_ENTRY_CONFIRMED;
+					}
+					else {
+						sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK;
+					}
+
+					printf("Tailgating candidate: second LDR1 trigger\r\n");
 				}
 				else {
-					sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK;
-				}
+					sequence_state = LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR;
+					event = EVT_ENTRY_REQUEST;
 
-				printf("Tailgating candidate: second LDR1 trigger\r\n");
+					printf("Entry request restarted before ownership\r\n");
+				}
 			}
 
 			// Inside LDR blocked, the entry direction can be confirmed.
@@ -694,8 +771,8 @@ Event_t ldr_poll(void)
 
 		case LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR:
 
-			if ((ldr1_state == LDR_CLEAR) && ldr2_state == LDR_CLEAR){
-				if (direction_locked && (locked_direction == DIR_EXIT)) {
+			if (direction_locked && (locked_direction == DIR_EXIT)) {
+				if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_CLEAR)) {
 					// The FSM granted EXIT priority for the simultaneous request.
 					// Complete it only after both sensors clear, regardless of which
 					// sensor cleared first, then retain the reverse-entry guard.
@@ -705,12 +782,75 @@ Event_t ldr_poll(void)
 
 					printf("Simultaneous EXIT passage complete\r\n");
 				}
-				else {
-					ldr_sequence_reset();
-					event = EVT_PASSAGE_CANCELLED;
+			}
 
-					printf("Passage clear after simultaneous request\r\n");
-				}
+			else if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_CLEAR)) {
+				ldr_sequence_reset();
+				event = EVT_PASSAGE_CANCELLED;
+
+				printf("Both sides stepped back from simultaneous request\r\n");
+			}
+
+			else if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_BLOCK)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_LDR1_CLEAR_CONFIRM;
+				ldr_sequence_start_ms = now;
+
+				printf("Simultaneous request: ENTRY side stepped back\r\n");
+			}
+
+			else if ((ldr1_state == LDR_BLOCK) && (ldr2_state == LDR_CLEAR)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_LDR2_CLEAR_CONFIRM;
+				ldr_sequence_start_ms = now;
+
+				printf("Simultaneous request: EXIT side stepped back\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_SIMULTANEOUS_LDR1_CLEAR_CONFIRM:
+
+			if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_CLEAR)) {
+				ldr_sequence_reset();
+				event = EVT_PASSAGE_CANCELLED;
+			}
+			else if ((ldr1_state == LDR_BLOCK) && (ldr2_state == LDR_BLOCK)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR;
+				ldr_sequence_start_ms = 0;
+			}
+			else if ((ldr1_state == LDR_BLOCK) && (ldr2_state == LDR_CLEAR)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_LDR2_CLEAR_CONFIRM;
+				ldr_sequence_start_ms = now;
+			}
+			else if ((now - ldr_sequence_start_ms) >= LDR_SIMULTANEOUS_CONFIRM_MS) {
+				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR;
+				ldr_sequence_start_ms = now;
+				event = EVT_EXIT_REQUEST;
+
+				printf("Simultaneous request resolved: EXIT granted\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_SIMULTANEOUS_LDR2_CLEAR_CONFIRM:
+
+			if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_CLEAR)) {
+				ldr_sequence_reset();
+				event = EVT_PASSAGE_CANCELLED;
+			}
+			else if ((ldr1_state == LDR_BLOCK) && (ldr2_state == LDR_BLOCK)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR;
+				ldr_sequence_start_ms = 0;
+			}
+			else if ((ldr1_state == LDR_CLEAR) && (ldr2_state == LDR_BLOCK)) {
+				sequence_state = LDR_SEQUENCE_SIMULTANEOUS_LDR1_CLEAR_CONFIRM;
+				ldr_sequence_start_ms = now;
+			}
+			else if ((now - ldr_sequence_start_ms) >= LDR_SIMULTANEOUS_CONFIRM_MS) {
+				sequence_state = LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR;
+				ldr_sequence_start_ms = now;
+				event = EVT_ENTRY_REQUEST;
+
+				printf("Simultaneous request resolved: ENTRY remains\r\n");
 			}
 
 			break;

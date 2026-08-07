@@ -34,6 +34,19 @@ bool ldr_path_has_been_clear_for(uint32_t duration_ms);
 // not need to step away and trigger a second edge before the door opens.
 bool ldr_entry_sensor_is_blocked(void);
 
+// Return true when the latest stable state of the inside exit sensor is BLOCK.
+bool ldr_exit_sensor_is_blocked(void);
+
+// Return true when both sensors are currently in their stable BLOCK state.
+bool ldr_both_sensors_are_blocked(void);
+
+// Preserve a closed-door simultaneous request while the FSM waits for one
+// side to step back. This does not assign ownership to either direction.
+void ldr_start_simultaneous_hold(void);
+
+// Observe an existing LDR2 request briefly before assigning EXIT ownership.
+void ldr_start_exit_arbitration(void);
+
 // Lock passage recognition to the direction currently owned by the FSM.
 // The opposite sensor is still monitored for closing safety, but it cannot
 // start a new passage or reverse the motor until the lock is released.

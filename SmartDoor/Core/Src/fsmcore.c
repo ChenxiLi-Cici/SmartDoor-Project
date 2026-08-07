@@ -237,6 +237,7 @@ void fsm_dispatch(Event_t event) {
 				case CARD_INVALID:
 					lcd_print("Invalid card", "");
 					led_start_blink(INVALID_CARD_DURATION_MS, BLINK_INTERVAL_MS);
+					buzzer_alert(INVALID_CARD_DURATION_MS);
 					start_fsm_timer(INVALID_CARD_DURATION_MS, IDLE_REVERT);
 					break;
 				default:

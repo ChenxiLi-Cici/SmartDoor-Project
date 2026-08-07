@@ -36,130 +36,139 @@ typedef enum {
 
 static AdminScreen_t screen = ADMIN_MENU_PAGE1;
 
-// The 4 digits shown in the [xx:xx] field
-static char    entry[ADMIN_DIGITS];
+// The 4 digits shown in the [xx:xx]
+static char entry[ADMIN_DIGITS];
 // Which entry (0 to 3) will the next key be written into
-static uint8_t cursor = 0;
+static uint8_t curr_entry_i = 0;
 
-/* Fields held aside while the later screens of a multi-step entry are being
- * typed. Shared between the event flow and the set-clock flow, which can
- * never be active at the same time. */
-static uint8_t pending_day   = 0;
-static uint8_t pending_month = 0;
-static uint8_t pending_hour  = 0;
-static uint8_t pending_min   = 0;
 
-/* ---------------- entry helpers ---------------- */
+/* Since the Settings page has three pages in total,
+ * when switching pages, the entry will be overwritten by load_entry,
+ * so the time data that has been entered needs to be stored
+ * */
+static uint8_t saved_day = 0;
+static uint8_t saved_month = 0;
+static uint8_t saved_hour = 0;
+static uint8_t saved_min = 0;
 
-/* Pre-fill the two 2-digit fields. Depending on the screen these hold
- * hour/minute, day/month, or the hours/minutes of a duration. */
+
+// Pre-fill the four entries
 static void entry_load(uint8_t left, uint8_t right) {
+	// Split left/right parameters into tens and units places and store them in entry[0]/entry[1]
     entry[0] = (char)('0' + left / 10);
     entry[1] = (char)('0' + left % 10);
     entry[2] = (char)('0' + right / 10);
     entry[3] = (char)('0' + right % 10);
-    // cursor back at the front. Let the next input start overwriting from the first digit.
-    cursor   = 0;
+    // curr_entry_i back at the front. Let the next input start overwriting from the first digit.
+    curr_entry_i = 0;
 }
 
 // Type the entry
 static void entry_type(char digit) {
-	// Write a number at the cursor position
-    entry[cursor] = digit;
+	// Write a number at the curr_entry_i position
+    entry[curr_entry_i] = digit;
     // a 5th digit wraps back to the front.
-    cursor = (uint8_t)((cursor + 1) % ADMIN_DIGITS);
+    curr_entry_i = (uint8_t)((curr_entry_i + 1) % ADMIN_DIGITS);
 }
 
-// Assemble the four digits into a display format [xx:xx]
+
+// Assemble the four digits into a display format [xx:xx] or [xx/xx]
 static void entry_to_text(char *out) {
     out[0] = '[';
     out[1] = entry[0];
     out[2] = entry[1];
-    out[3] = ':';
+
+    if (screen == ADMIN_SCHED_DATE || screen == ADMIN_SET_DATE) {
+    	out[3] = '/';
+	} else {
+		out[3] = ':';
+	}
+
     out[4] = entry[2];
     out[5] = entry[3];
     out[6] = ']';
     out[7] = '\0';
 }
 
-// Turn the 4 digits into hours/minutes; false if not a valid 24-hour reading.
-static bool entry_to_time(uint8_t *hour, uint8_t *minute) {
-    uint8_t h = (uint8_t)((entry[0] - '0') * 10 + (entry[1] - '0'));
-    uint8_t m = (uint8_t)((entry[2] - '0') * 10 + (entry[3] - '0'));
+// Two ASCII digit characters -> the two-digit number they spell
+static uint8_t ascii_to_decimal(char tens, char units) {
+    return (uint8_t)((tens - '0') * 10 + (units - '0'));
+}
 
+// Turn the 4 digits into hours/minutes
+static bool entry_to_time(uint8_t *hour, uint8_t *minute) {
+    uint8_t h = ascii_to_decimal(entry[0], entry[1]);
+    uint8_t m = ascii_to_decimal(entry[2], entry[3]);
+
+    // Return false if the input is invalid
     if (h > 23 || m > 59) {
         return false;
     }
 
-    *hour   = h;
+    *hour = h;
     *minute = m;
     return true;
 }
 
-// Turn the 4 digits into day/month; false if not a plausible date.
+// Turn the 4 digits into day/month
 static bool entry_to_date(uint8_t *day, uint8_t *month) {
-    uint8_t d = (uint8_t)((entry[0] - '0') * 10 + (entry[1] - '0'));
-    uint8_t m = (uint8_t)((entry[2] - '0') * 10 + (entry[3] - '0'));
+    uint8_t d = ascii_to_decimal(entry[0], entry[1]);
+    uint8_t m = ascii_to_decimal(entry[2], entry[3]);
 
-    if (d < 1U || d > 31U || m < 1U || m > 12U) {
+    // Return false if the input is invalid
+    if (d < 1 || d > 31 || m < 1 || m > 12) {
         return false;
     }
 
-    *day   = d;
+    *day = d;
     *month = m;
     return true;
 }
 
-/* Turn the 4 digits into a duration. Same range as a clock reading, because
- * an event cannot outlast the day it starts on anyway. */
+// Turn the 4 digits into a duration.
 static bool entry_to_duration(uint8_t *hours, uint8_t *minutes) {
-    uint8_t h = (uint8_t)((entry[0] - '0') * 10 + (entry[1] - '0'));
-    uint8_t m = (uint8_t)((entry[2] - '0') * 10 + (entry[3] - '0'));
+    uint8_t h = ascii_to_decimal(entry[0], entry[1]);
+    uint8_t m = ascii_to_decimal(entry[2], entry[3]);
 
+    // Return false if the input is invalid
     if (h > 23U || m > 59U) {
         return false;
     }
 
-    *hours   = h;
+    *hours = h;
     *minutes = m;
     return true;
 }
 
 /* Park the blinking cursor on the digit the next keypress will overwrite.
- * The field is drawn as "[xx:xx]" at the start of line 2:
- *
- *   column  0  1  2  3  4  5  6
- *   char    [  x  x  :  x  x  ]
- *
- * so entry[0..3] sit at columns 1, 2, 4 and 5. */
+ * entry 0~3 sit at col 1, 2, 4 and 5. */
 static void show_entry_cursor(void) {
     uint8_t col;
 
-    // Column 0 is taken by '[', so the first digit starts at column 1.
-    col = 1 + cursor;
+    // Col0 is taken by '[', the first digit starts at col1.
+    col = 1 + curr_entry_i;
 
-    /* The right-hand pair sits one column further right, because the colon
-     * takes column 3. */
-    if (cursor >= 2) {
+    // Col3 is taken by ':' or '/'
+    if (curr_entry_i >= 2) {
         col = col + 1;
     }
 
     lcd_cursor_at(1, col);
 }
 
-/* Show an error and keep the typed value on screen, so the admin can see
- * what went wrong and carry on typing over it. */
-static void show_invalid_entry(const char *reason) {
+/* Show an error and keep the typed value on screen,
+ * so the admin can check the input and retype valid value */
+static void show_invalid_entry(const char *err_message) {
     char field[8];
     char line2[20];
 
     entry_to_text(field);
     snprintf(line2, sizeof(line2), "%s retype", field);
-    lcd_print(reason, line2);
+    lcd_print(err_message, line2);
     show_entry_cursor();
 }
 
-// Redraw whichever screen is currently active.
+// Redraw the screen
 static void show_screen(void) {
     char field[8];
     char line1[20];
@@ -202,7 +211,7 @@ static void show_screen(void) {
     case ADMIN_SCHED_DATE:
         entry_to_text(field);
         snprintf(line2, sizeof(line2), "%s   B:Nxt", field);
-        lcd_print("Date DD:MM", line2);
+        lcd_print("Date DD/MM", line2);
         show_entry_cursor();
         break;
 
@@ -223,7 +232,7 @@ static void show_screen(void) {
     case ADMIN_SET_DATE:
         entry_to_text(field);
         snprintf(line2, sizeof(line2), "%s   B:Nxt", field);
-        lcd_print("Today DD:MM", line2);
+        lcd_print("Today DD/MM", line2);
         show_entry_cursor();
         break;
 
@@ -259,18 +268,14 @@ void admin_menu_enter(void) {
     show_screen();
 }
 
-/* Called by fsmcore on every path out of the menu. Only resets the screen
- * state; the LCD is left alone because the state we are leaving to will
- * draw its own content. */
+// Called by fsmcore on every path out of the menu.
 void admin_menu_exit(void) {
+	// Resets the screen state
     screen = ADMIN_MENU_PAGE1;
     printf("Admin: menu closed\r\n");
 }
 
-/* Handle one keypress, dispatched by fsmcore while the door is in ADMIN.
- * The outer switch picks the current screen, and each case decides what the
- * key means there. Note '*' never arrives: fsmcore intercepts it as "leave
- * the menu", so the menu only uses 0-9, A-D and '#'. */
+// Handle one keypress, called by fsmcore while in ADMIN
 void admin_menu_handle_key(char key) {
 
     switch (screen) {
@@ -290,9 +295,9 @@ void admin_menu_handle_key(char key) {
     /* main menu, page 2 */
     case ADMIN_MENU_PAGE2:
         if (key == '3') {
-            uint8_t mo, d;
-            scheduler_get_date(&mo, &d);
-            entry_load(d, mo);
+            uint8_t month, day;
+            scheduler_get_date(&month, &day);
+            entry_load(day, month);
             screen = ADMIN_SET_DATE;
         } else if (key == '4') {
             lcd_print("    SUCCESS !", "");
@@ -310,10 +315,10 @@ void admin_menu_handle_key(char key) {
         if (key == '1') {
             screen = ADMIN_SCHED_VIEW;
         } else if (key == '2') {
-            uint8_t mo, d;
+            uint8_t month, day;
             // Pre-fill with today's date
-            scheduler_get_date(&mo, &d);
-            entry_load(d, mo);
+            scheduler_get_date(&month, &day);
+            entry_load(day, month);
             screen = ADMIN_SCHED_DATE;
         } else if (key == 'A') {
             screen = ADMIN_MENU_PAGE1;
@@ -321,7 +326,7 @@ void admin_menu_handle_key(char key) {
         show_screen();
         break;
 
-    /* show what is already scheduled */
+    /* view what is already scheduled */
     case ADMIN_SCHED_VIEW:
         if (key == 'C') {
             scheduler_disable();
@@ -341,13 +346,15 @@ void admin_menu_handle_key(char key) {
         } else if (key == 'A') {
             screen = ADMIN_SCHED_MENU;
         } else if (key == 'B') {
-            uint8_t d, mo;
-            if (!entry_to_date(&d, &mo)) {
+            uint8_t day, month;
+            // if the input date is invalid
+            if (!entry_to_date(&day, &month)) {
                 show_invalid_entry("Invalid date");
                 return;
             }
-            pending_day   = d;
-            pending_month = mo;
+            // store the input date before calling entry_load
+            saved_day = day;
+            saved_month = month;
 
             entry_load(ADMIN_DEFAULT_START_HOUR, ADMIN_DEFAULT_START_MIN);
             screen = ADMIN_SCHED_START;
@@ -355,21 +362,21 @@ void admin_menu_handle_key(char key) {
         show_screen();
         break;
 
-    /* event: what time it starts */
+    /* event: what time */
     case ADMIN_SCHED_START:
         if (key >= '0' && key <= '9') {
             entry_type(key);
         } else if (key == 'A') {
-            entry_load(pending_day, pending_month);
+            entry_load(saved_day, saved_month);
             screen = ADMIN_SCHED_DATE;
         } else if (key == 'B') {
-            uint8_t h, mi;
-            if (!entry_to_time(&h, &mi)) {
+            uint8_t hour, minute;
+            if (!entry_to_time(&hour, &minute)) {
                 show_invalid_entry("Invalid time");
                 return;
             }
-            pending_hour = h;
-            pending_min  = mi;
+            saved_hour = hour;
+            saved_min = minute;
 
             entry_load(ADMIN_DEFAULT_DUR_HOUR, ADMIN_DEFAULT_DUR_MIN);
             screen = ADMIN_SCHED_DUR;
@@ -377,27 +384,30 @@ void admin_menu_handle_key(char key) {
         show_screen();
         break;
 
-    /* event: how long it lasts, then save */
+    /* event: what is the duration, then save */
     case ADMIN_SCHED_DUR:
         if (key >= '0' && key <= '9') {
             entry_type(key);
         } else if (key == 'A') {
-            entry_load(pending_hour, pending_min);
+            entry_load(saved_hour, saved_min);
             screen = ADMIN_SCHED_START;
         } else if (key == '#') {
-            uint8_t  dh, dm;
+            uint8_t  entered_duration_hour, entered_duration_min;
             uint16_t duration_min;
             uint16_t start_min;
 
-            if (!entry_to_duration(&dh, &dm)) {
+            // if the length is invalid
+            if (!entry_to_duration(&entered_duration_hour, &entered_duration_min)) {
                 show_invalid_entry("Invalid length");
                 return;
             }
 
-            duration_min = (uint16_t)(dh * 60 + dm);
-            start_min    = (uint16_t)(pending_hour * 60 + pending_min);
+            // transfer the entered duration to minutes
+            duration_min = (uint16_t)(entered_duration_hour * 60 + entered_duration_min);
+            start_min = (uint16_t)(saved_hour * 60 + saved_min);
 
-            if (duration_min == 0U) {
+            // if the duration is 0 minutes
+            if (duration_min == 0) {
                 show_invalid_entry("Zero length");
                 return;
             }
@@ -407,8 +417,10 @@ void admin_menu_handle_key(char key) {
                 return;
             }
 
-            scheduler_set_event(pending_month, pending_day,
-                                pending_hour, pending_min, duration_min);
+            // set the scheduled event using the input data
+            scheduler_set_event(saved_month, saved_day,
+                                saved_hour, saved_min, duration_min);
+
             lcd_print("Event saved", "");
             HAL_Delay(ADMIN_CONFIRM_MS);
             screen = ADMIN_SCHED_MENU;
@@ -423,17 +435,19 @@ void admin_menu_handle_key(char key) {
         } else if (key == 'A') {
             screen = ADMIN_MENU_PAGE2;
         } else if (key == 'B') {
-            uint8_t d, mo;
-            if (!entry_to_date(&d, &mo)) {
+            uint8_t day, month;
+
+            if (!entry_to_date(&day, &month)) {
                 show_invalid_entry("Invalid date");
                 return;
             }
-            pending_day   = d;
-            pending_month = mo;
 
-            uint8_t h, mi;
-            scheduler_get_time(&h, &mi);
-            entry_load(h, mi);
+            saved_day = day;
+            saved_month = month;
+
+            uint8_t hour, minute;
+            scheduler_get_time(&hour, &minute);
+            entry_load(hour, minute);
             screen = ADMIN_SET_CLOCK;
         }
         show_screen();
@@ -444,17 +458,19 @@ void admin_menu_handle_key(char key) {
         if (key >= '0' && key <= '9') {
             entry_type(key);
         } else if (key == 'A') {
-            entry_load(pending_day, pending_month);
+            entry_load(saved_day, saved_month);
             screen = ADMIN_SET_DATE;
         } else if (key == '#') {
-            uint8_t h, mi;
-            if (!entry_to_time(&h, &mi)) {
+
+            uint8_t hour, minute;
+            if (!entry_to_time(&hour, &minute)) {
                 show_invalid_entry("Invalid time");
                 return;
             }
 
-            scheduler_set_date(pending_month, pending_day);
-            scheduler_set_clock(h, mi);
+            // set the scheduler
+            scheduler_set_date(saved_month, saved_day);
+            scheduler_set_clock(hour, minute);
 
             lcd_print("Clock updated", "");
             HAL_Delay(ADMIN_CONFIRM_MS);
@@ -466,16 +482,19 @@ void admin_menu_handle_key(char key) {
     /* lock configuration */
     case ADMIN_LOCK_CONFIG:
         if (key == '#') {
+        	// if the door is currently unlocked, restore the NORMAL mode
             if (fsm_get_admin_origin() == UNLOCKED) {
                 lcd_print("Restoring", "NORMAL mode");
                 HAL_Delay(ADMIN_CONFIRM_MS);
                 fsm_dispatch(EVT_ADMIN_SET_NORMAL);
             } else {
+            // if the door is currently locked, turn to the open mode
                 lcd_print("Door set to", "OPEN mode");
                 HAL_Delay(ADMIN_CONFIRM_MS);
                 fsm_dispatch(EVT_ADMIN_SET_OPEN);
             }
             return;
+
         } else if (key == 'A') {
             screen = ADMIN_MENU_PAGE1;
         }

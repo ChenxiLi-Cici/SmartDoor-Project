@@ -121,6 +121,7 @@ static bool ldr_sequence_matches_direction(Direction_t direction)
 		   (sequence_state == LDR_SEQUENCE_EXIT_GUARD) ||
 		   (sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR) ||
 		   (sequence_state == LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR2_BLOCK) ||
+		   (sequence_state == LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR) ||
 		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_CLEAR);
 }
 
@@ -654,18 +655,11 @@ Event_t ldr_poll(void)
 
 		case LDR_SEQUENCE_REVERSE_ENTRY_WAIT_LDR1_CLEAR:
 
-			// If LDR2 is reached while LDR1 remains blocked, the direction is
-			// ambiguous. Preserve exit priority instead of raising a false alarm.
-			if (ldr2_just_block && (ldr1_state == LDR_BLOCK)) {
-				sequence_state = LDR_SEQUENCE_EXIT_WAIT_LDR1_CLEAR;
-				event = EVT_EXIT_REQUEST;
-
-				printf("Reverse candidate became simultaneous: EXIT priority\r\n");
-			}
-
-			// A fresh LDR2 edge in the same cycle that LDR1 is already clear
-			// confirms the unauthorised reverse entry.
-			else if (ldr2_just_block) {
+			// Reaching LDR2 after LDR1 was detected in an earlier polling cycle
+			// confirms the entry direction, even if LDR1 is still blocked. A true
+			// simultaneous request is resolved earlier in EXIT_GUARD, where LDR2
+			// has priority when both stable edges arrive in the same cycle.
+			if (ldr2_just_block) {
 				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_CLEAR;
 				event = EVT_TAILGATE_DETECTED;
 
@@ -701,10 +695,22 @@ Event_t ldr_poll(void)
 		case LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR:
 
 			if ((ldr1_state == LDR_CLEAR) && ldr2_state == LDR_CLEAR){
-				ldr_sequence_reset();
-				event = EVT_PASSAGE_CANCELLED;
+				if (direction_locked && (locked_direction == DIR_EXIT)) {
+					// The FSM granted EXIT priority for the simultaneous request.
+					// Complete it only after both sensors clear, regardless of which
+					// sensor cleared first, then retain the reverse-entry guard.
+					sequence_state = LDR_SEQUENCE_EXIT_GUARD;
+					ldr_sequence_start_ms = 0;
+					event = EVT_PASSAGE_DONE;
 
-				printf("Passage clear after simultaneous request\r\n");
+					printf("Simultaneous EXIT passage complete\r\n");
+				}
+				else {
+					ldr_sequence_reset();
+					event = EVT_PASSAGE_CANCELLED;
+
+					printf("Passage clear after simultaneous request\r\n");
+				}
 			}
 
 			break;

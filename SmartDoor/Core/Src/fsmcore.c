@@ -38,6 +38,7 @@ static DoorState_t admin_return_state = IDLE;
 
 static EntryAuthState_t entry_auth_state = ENTRY_AUTH_NONE;
 static bool authorised_entry_queued = false;
+static bool simultaneous_hold_active = false;
 
 static volatile uint32_t fsm_timer_ms = 0;
 static volatile uint8_t fsm_timer_expired = 0;
@@ -80,6 +81,7 @@ static void enter_idle(void) {
 	reset_fsm_timer();
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
+	simultaneous_hold_active = false;
 	ldr_unlock_direction();
 
 	led_off();
@@ -113,6 +115,7 @@ static void enter_authorised(void) {
 	passage_direction = DIR_ENTRY;
 	entry_auth_state = ENTRY_AUTH_AVAILABLE;
 	authorised_entry_queued = false;
+	simultaneous_hold_active = false;
 
 	lcd_print("Access granted", "Approach door");
 	led_signal_authorised();
@@ -126,6 +129,14 @@ static void begin_entry_arbitration(void)
 	start_fsm_timer(ENTRY_ARBITRATION_MS, ENTRY_ARBITRATION);
 }
 
+static void enter_simultaneous_hold(void)
+{
+	reset_fsm_timer();
+	simultaneous_hold_active = true;
+	ldr_start_simultaneous_hold();
+	lcd_print("Exit priority", "Entry step back");
+}
+
 static void enter_passage(void) {
 	lcd_print("Please pass", "");
 }
@@ -133,6 +144,7 @@ static void enter_passage(void) {
 static void start_authorised_entry_passage(void)
 {
 	reset_fsm_timer();
+	simultaneous_hold_active = false;
 	passage_direction = DIR_ENTRY;
 	ldr_lock_direction(DIR_ENTRY);
 	current_state = PASSAGE;
@@ -142,6 +154,7 @@ static void start_authorised_entry_passage(void)
 
 static void enter_exit_passage(void)
 {
+	simultaneous_hold_active = false;
 	passage_direction = DIR_EXIT;
 	entry_auth_state = ENTRY_AUTH_NONE;
 	authorised_entry_queued = false;
@@ -160,9 +173,10 @@ static void reopen_for_safety(Direction_t direction)
 	start_fsm_timer(PASSAGE_WAIT_TIMEOUT_MS, FSM_TIMEOUT);
 }
 
-static void start_simultaneous_request(void)
+static void start_exit_priority_passage(void)
 {
 	reset_fsm_timer();
+	simultaneous_hold_active = false;
 
 	// Preserve an unused entry authorization so that the authorized entrant can pass after the exit.
 	authorised_entry_queued = (entry_auth_state == ENTRY_AUTH_AVAILABLE);
@@ -214,6 +228,7 @@ static void request_close(void)
 }
 
 static void enter_unlocked(void) {
+	simultaneous_hold_active = false;
 	ldr_unlock_direction();
 	passage_direction = DIR_ENTRY;
 	lcd_print("Event mode", "Door open");
@@ -254,9 +269,17 @@ void fsm_dispatch(Event_t event) {
 					current_state = AUTHORISED;
 					enter_authorised();
 
-					// If the person was already standing at LDR1 when the card
-					// was read, begin the same short exit-priority arbitration.
-					if (ldr_entry_sensor_is_blocked()) {
+					// If both sides are occupied, keep the door closed until one
+					// side steps back. Otherwise handle an existing LDR1 request.
+					if (ldr_both_sensors_are_blocked()) {
+						enter_simultaneous_hold();
+					}
+					else if (ldr_exit_sensor_is_blocked()) {
+						// Keep the existing EXIT request unowned for the same short
+						// observation window used by a newly detected LDR2 edge.
+						ldr_start_exit_arbitration();
+					}
+					else if (ldr_entry_sensor_is_blocked()) {
 						begin_entry_arbitration();
 					}
 					break;
@@ -279,9 +302,24 @@ void fsm_dispatch(Event_t event) {
 			current_state = PASSAGE;
 			enter_exit_passage();
 		}
-		else if (event == EVT_BOTH_LDRS_BLOCKED) {
+		else if (event == EVT_ENTRY_CONFIRMED) {
+			// Without an entry authorisation, a lone LDR2 reached after an
+			// old LDR1 candidate must not block a valid uncredentialled EXIT.
 			current_state = PASSAGE;
-			start_simultaneous_request();
+			enter_exit_passage();
+		}
+		else if (event == EVT_BOTH_LDRS_BLOCKED) {
+			enter_simultaneous_hold();
+		}
+		else if (simultaneous_hold_active && (event == EVT_ENTRY_REQUEST)) {
+			// The EXIT side stepped back, leaving an unauthorised entrant.
+			// Keep the door closed; a card can still be scanned while LDR1 is held.
+			simultaneous_hold_active = false;
+			ldr_unlock_direction();
+			lcd_print("Entry denied", "Scan card");
+		}
+		else if (simultaneous_hold_active && (event == EVT_PASSAGE_CANCELLED)) {
+			enter_idle();
 		}
 		else if (event == EVT_SCHEDULE_START) {
 			current_state = UNLOCKED;
@@ -359,7 +397,7 @@ void fsm_dispatch(Event_t event) {
 		}
 		else if (event == EVT_BOTH_LDRS_BLOCKED) {
 			current_state = PASSAGE;
-			start_simultaneous_request();
+			start_exit_priority_passage();
 		}
 		else if (event == EVT_ENTRY_REQUEST) {
 			current_state = PASSAGE;
@@ -429,21 +467,27 @@ void fsm_dispatch(Event_t event) {
 		break;
 
 	case AUTHORISED:
-		if (event == EVT_ENTRY_REQUEST) {
+		if (event == EVT_BOTH_LDRS_BLOCKED) {
+			enter_simultaneous_hold();
+		}
+		else if (event == EVT_ENTRY_REQUEST) {
+			simultaneous_hold_active = false;
 			begin_entry_arbitration();
 		}
-		else if ((event == EVT_EXIT_REQUEST) ||
-				 (event == EVT_BOTH_LDRS_BLOCKED)) {
+		else if (event == EVT_EXIT_REQUEST) {
 			// Until ENTRY wins the arbitration and opens the door, an EXIT
 			// request owns the doorway and the unused entry authorization waits.
 			current_state = PASSAGE;
-			start_simultaneous_request();
+			start_exit_priority_passage();
 		}
 		else if (event == EVT_ENTRY_CONFIRMED) {
 			// LDR1 was detected before LDR2 while the short arbitration was
 			// running, so the authorised ENTRY direction is already confirmed.
 			entry_auth_state = ENTRY_AUTH_USED;
 			start_authorised_entry_passage();
+		}
+		else if (simultaneous_hold_active && (event == EVT_PASSAGE_CANCELLED)) {
+			enter_authorised();
 		}
 		else if (event == EVT_TIMEOUT) {
 			current_state = IDLE;

@@ -372,6 +372,13 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  // Refresh the LDR state before timers make arbitration or closing decisions.
+	  Event_t ldr_event = ldr_poll();
+
+	  if (ldr_event != EVT_NONE) {
+		  fsm_dispatch(ldr_event);
+	  }
+
 	  // Constantly refresh the non-blocking timers
 	  fsm_poll();
 
@@ -419,12 +426,6 @@ int main(void)
 	  if (key != 0) {
 		  fsm_set_key(key);
 		  fsm_dispatch(EVT_KEYPAD_KEY);
-	  }
-
-	  Event_t ldr_event = ldr_poll();
-
-	  if (ldr_event != EVT_NONE) {
-		  fsm_dispatch(ldr_event);
 	  }
 
 	  /* Even in the unlock state,

@@ -308,11 +308,9 @@ void ldr_lock_direction(Direction_t direction)
 
 void ldr_unlock_direction(void)
 {
-	// Do not disturb an automatic sequence when the FSM is already unlocked.
-	if (direction_locked) {
-		ldr_sequence_reset();
-	}
-
+	// A new unlocked decision must not inherit a partial sequence from the
+	// previous authorization, passage, administrator mode, or schedule mode.
+	ldr_sequence_reset();
 	direction_locked = false;
 }
 

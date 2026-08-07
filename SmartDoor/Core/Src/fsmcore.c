@@ -433,12 +433,17 @@ void fsm_dispatch(Event_t event) {
 			begin_entry_arbitration();
 		}
 		else if ((event == EVT_EXIT_REQUEST) ||
-				 (event == EVT_BOTH_LDRS_BLOCKED) ||
-				 (event == EVT_ENTRY_CONFIRMED)) {
+				 (event == EVT_BOTH_LDRS_BLOCKED)) {
 			// Until ENTRY wins the arbitration and opens the door, an EXIT
 			// request owns the doorway and the unused entry authorization waits.
 			current_state = PASSAGE;
 			start_simultaneous_request();
+		}
+		else if (event == EVT_ENTRY_CONFIRMED) {
+			// LDR1 was detected before LDR2 while the short arbitration was
+			// running, so the authorised ENTRY direction is already confirmed.
+			entry_auth_state = ENTRY_AUTH_USED;
+			start_authorised_entry_passage();
 		}
 		else if (event == EVT_TIMEOUT) {
 			current_state = IDLE;

@@ -37,6 +37,12 @@ typedef enum
 	// Both two LDR blocked by people approaching from opposite slides.
 	LDR_SEQUENCE_SIMULTANEOUS_WAIT_CLEAR,
 
+	// A second LDR1 trigger is only a tailgating candidate. Confirm it only
+	// after the first person has cleared LDR2 and LDR2 is blocked again.
+	LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK,
+	LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR,
+	LDR_SEQUENCE_TAILGATE_WAIT_SECOND_LDR2_BLOCK,
+
 	// Detect and report a tailgating. Wait until the passage clear.
 	LDR_SEQUENCE_TAILGATE_WAIT_CLEAR
 } ldrSequenceState_t;
@@ -89,6 +95,9 @@ static bool ldr_sequence_matches_direction(Direction_t direction)
 		return (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR) ||
 			   (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR2_BLOCK) ||
 			   (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR2_CLEAR) ||
+			   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK) ||
+			   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR) ||
+			   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_SECOND_LDR2_BLOCK) ||
 			   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_CLEAR);
 	}
 
@@ -121,7 +130,10 @@ static bool ldr_sequence_can_timeout(void)
 	return (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR1_CLEAR)||
 		   (sequence_state == LDR_SEQUENCE_ENTRY_WAIT_LDR2_BLOCK)||
 		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR2_CLEAR)||
-		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR1_BLOCK);
+		   (sequence_state == LDR_SEQUENCE_EXIT_WAIT_LDR1_BLOCK)||
+		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK)||
+		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR)||
+		   (sequence_state == LDR_SEQUENCE_TAILGATE_WAIT_SECOND_LDR2_BLOCK);
 }
 
 // Convert one raw ADC value into a logical CLEAR or BLOCK state.
@@ -422,12 +434,21 @@ Event_t ldr_poll(void)
 
 		case LDR_SEQUENCE_ENTRY_WAIT_LDR2_BLOCK:
 
-			// Atfer LDR1 blocked and cleared once, this outside LDR blocked again, what means there is a tailgating.
-			if (ldr2_just_block && (ldr1_state == LDR_BLOCK)) {
-				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_CLEAR;
-				event = EVT_TAILGATE_DETECTED;
+			// A second person reached LDR1 before the first person reached LDR2.
+			// Record a candidate, but do not alert until LDR2 is reached a second time.
+			if (ldr1_just_block) {
+				ldr_sequence_start_ms = now;
 
-				printf("Tailgating detected across both LDRs\r\n");
+				if (ldr2_state == LDR_BLOCK) {
+					// The first person reached LDR2 in the same polling cycle.
+					sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR;
+					event = EVT_ENTRY_CONFIRMED;
+				}
+				else {
+					sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK;
+				}
+
+				printf("Tailgating candidate: second LDR1 trigger\r\n");
 			}
 
 			// Inside LDR blocked, the entry direction can be confirmed.
@@ -442,12 +463,13 @@ Event_t ldr_poll(void)
 
 		case LDR_SEQUENCE_ENTRY_WAIT_LDR2_CLEAR:
 
-			// Atfer LDR1 blocked and cleared once, this outside LDR blocked again, what means there is a tailgating.
+			// A second LDR1 trigger is only a candidate. The second person must
+			// later create a new LDR2 block before tailgating is confirmed.
 			if (ldr1_just_block) {
-				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_CLEAR;
-				event = EVT_TAILGATE_DETECTED;
+				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR;
+				ldr_sequence_start_ms = now;
 
-				printf("Tailgating detected: LDR1 blocked again\r\n");
+				printf("Tailgating candidate: waiting for first person to clear LDR2\r\n");
 			}
 
 			// Entry is complete only after the person has cleared both sensors.
@@ -531,6 +553,44 @@ Event_t ldr_poll(void)
 				event = EVT_PASSAGE_CANCELLED;
 
 				printf("Passage clear after simultaneous request\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_TAILGATE_WAIT_FIRST_LDR2_BLOCK:
+
+			// This LDR2 block belongs to the first, authorised person. Consume
+			// the authorisation, then wait for that person to clear LDR2.
+			if (ldr2_just_block) {
+				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR;
+				event = EVT_ENTRY_CONFIRMED;
+
+				printf("Tailgating candidate: first person reached LDR2\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_TAILGATE_WAIT_LDR2_CLEAR:
+
+			// Do not use the first person's existing LDR2 obstruction as proof
+			// of tailgating. Require LDR2 to become clear first.
+			if (ldr2_just_clear) {
+				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_SECOND_LDR2_BLOCK;
+
+				printf("Tailgating candidate: waiting for second LDR2 trigger\r\n");
+			}
+
+			break;
+
+		case LDR_SEQUENCE_TAILGATE_WAIT_SECOND_LDR2_BLOCK:
+
+			// A fresh LDR2 block after the first person cleared it confirms that
+			// the unauthorised second person continued through the doorway.
+			if (ldr2_just_block) {
+				sequence_state = LDR_SEQUENCE_TAILGATE_WAIT_CLEAR;
+				event = EVT_TAILGATE_DETECTED;
+
+				printf("Tailgating confirmed: second person reached LDR2\r\n");
 			}
 
 			break;

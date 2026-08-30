@@ -1,28 +1,35 @@
-#settings
+# Operating-system metadata
+.DS_Store
+**/.DS_Store
+
+# STM32CubeIDE workspace metadata
+.metadata/
 .settings/
 
-#metadata
-.metadata/
-
-#Debug
+# Build directories
 Debug/
 debug/
 Release/
-release
+release/
 
-# Prerequisites
+# Dependency and analysis output
 *.d
+*.su
+*.cyclo
 
-# Object files
+# Object files and firmware images
 *.o
 *.ko
 *.obj
 *.elf
+*.hex
+*.bin
 
-# Linker output
+# Linker and listing output
 *.ilk
 *.map
 *.exp
+*.list
 
 # Libraries
 *.lib
@@ -30,26 +37,23 @@ release
 *.la
 *.lo
 
-# Shared objects (inc. Windows DLLs)
+# Shared objects
 *.dll
 *.so
 *.so.*
 *.dylib
 
-# Executables
+# Executables and debugger output
 *.exe
 *.out
 *.app
 *.i*86
 *.x86_64
-*.hex
-*.bin
-
-# Debug files
 *.dSYM/
-*.su
 *.idb
 *.pdb
 
-
-.DS_Store
+# Local archives, logs, and temporary files
+*.zip
+*.log
+tmp/

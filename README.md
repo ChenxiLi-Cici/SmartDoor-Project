@@ -1,6 +1,6 @@
-# DESN2000 Smart Door
+# Smart Door
 
-Embedded smart-door controller developed for DESN2000 using an STM32 NUCLEO-F303RE board.
+Embedded smart-door controller developed using an STM32 NUCLEO-F303RE board.
 
 The system combines card-based entry authorisation, free exit, LDR passage sensing, tailgating detection, safe door closing, scheduled access, an administrator menu, LCD feedback, LEDs, a buzzer, a keypad, and stepper-motor control.
 

@@ -38,6 +38,6 @@ Release source baseline: `remove` at commit `e22b4b8`. The LDR/FSM test logic or
 
 ## Team
 
-- Xiaolei Wu (`z5556281`)
-- Leyi Yang (`z5535409`)
-- Chenxi Li (`z5531794`)
+- Xiaolei Wu
+- Leyi Yang
+- Chenxi Li

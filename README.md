@@ -1,4 +1,4 @@
-# Smart Door
+# Embedded Smart Door
 
 Embedded smart-door controller developed using an STM32 NUCLEO-F303RE board.
 
